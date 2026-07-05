@@ -229,6 +229,13 @@ const getTDPenaltyMultiplier = (td: number) => {
   return 1;
 };
 
+// TD has no upper bound (it only affects gameplay via the capped penalty above),
+// so a long-idle session can push it into the thousands. Cap the exponent here
+// to keep the cost finite (1.1^1000 ~= 2e41) instead of overflowing to Infinity,
+// which would otherwise permanently disable the Refactor button.
+const REFACTOR_COST_TD_CAP = 1000;
+const getRefactorCost = (td: number) => 100 * Math.pow(1.1, Math.min(td, REFACTOR_COST_TD_CAP));
+
 const getGlobalMultiplier = (state: GameState) => {
   let mult = 1;
   
@@ -441,12 +448,15 @@ export default function App() {
   });
 
   // Auto-save every 5 seconds (using obfuscation)
+  const gameStateRef = useRef(gameState);
+  gameStateRef.current = gameState;
+
   useEffect(() => {
     const interval = setInterval(() => {
-      localStorage.setItem('codeTycoonEncryptedSave', encodeSave(gameState));
+      localStorage.setItem('codeTycoonEncryptedSave', encodeSave(gameStateRef.current));
     }, 5000);
     return () => clearInterval(interval);
-  }, [gameState]);
+  }, []);
 
   // Offline progress and game loop
   useEffect(() => {
@@ -837,7 +847,7 @@ export default function App() {
             </div>
             <button
               onClick={() => {
-                const cost = 100 * Math.pow(1.1, gameState.technicalDebt || 0);
+                const cost = getRefactorCost(gameState.technicalDebt || 0);
                 if (gameState.loc >= cost) {
                   setGameState(prev => ({
                     ...prev,
@@ -846,15 +856,15 @@ export default function App() {
                   }));
                 }
               }}
-              disabled={gameState.loc < 100 * Math.pow(1.1, gameState.technicalDebt || 0) || Math.floor(gameState.technicalDebt || 0) <= 0}
+              disabled={gameState.loc < getRefactorCost(gameState.technicalDebt || 0) || Math.floor(gameState.technicalDebt || 0) <= 0}
               className={`w-full sm:w-auto px-4 py-2 rounded-lg font-bold transition-all shrink-0 ${
-                gameState.loc >= 100 * Math.pow(1.1, gameState.technicalDebt || 0) && Math.floor(gameState.technicalDebt || 0) > 0
+                gameState.loc >= getRefactorCost(gameState.technicalDebt || 0) && Math.floor(gameState.technicalDebt || 0) > 0
                   ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-sm cursor-pointer'
                   : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'
               }`}
             >
               Refactor (-10 TD)
-              <div className="text-[10px] font-mono font-normal">Cost: {formatNumber(100 * Math.pow(1.1, gameState.technicalDebt || 0))} LOC</div>
+              <div className="text-[10px] font-mono font-normal">Cost: {formatNumber(getRefactorCost(gameState.technicalDebt || 0))} LOC</div>
             </button>
           </div>
 
