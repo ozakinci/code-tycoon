@@ -1,6 +1,21 @@
 # Code Tycoon — Backlog
 
-Source: `Code_Tycoon_Implementation_Instructions.txt`. Ideas are grouped as in the original doc; each top-level item has a status checkbox.
+## Session notes — where we left off (2026-07-05)
+
+**Done this session:** cloned the repo from GitHub into this local folder and set up two-way sync; cut all ties with Google AI Studio (removed unused deps `@google/genai`/`express`/`dotenv`/`better-sqlite3`/`motion`, AI Studio scaffold files, orphaned `App.v1*.tsx` snapshots); fixed BUG-001 (Technical Debt/Refactor cost could overflow to `Infinity` after days idle) and BUG-002 (auto-save effect never actually fired due to a bad dependency array) — see `TICKETS.md`; refreshed `designDoc.ts` to match the current code; set up GitHub Pages deployment (auto-publishes on every push to `main` via `.github/workflows/deploy.yml`) — **the game is now live at https://ozakinci.github.io/code-tycoon/**.
+
+**Next time: move to the mr-fit multi-agent workflow.** We looked at how `mr-fit` (a sibling project) is set up — six project-scoped Claude Code subagents (`project-manager`, `main-dev`, `tester`, `documenter`, `technical-documenter`, `code-reviewer`) coordinated by `project-manager` as the sole point of contact, with ticket-enforced commits (`commit-msg` git hook requiring a ticket ID), an automated post-commit review/test hook (needs the `claude` CLI on PATH — **confirmed installed** for this machine), and a persistent `project/agent-log.md` for continuity across sessions. Decisions made so far:
+1. `claude` CLI is installed, so the post-commit automation hook (code-reviewer + tester running in the background after every commit) can actually fire here, unlike the gap mr-fit's own docs flag for plain VSCode-extension setups.
+2. Plan to set up a genuinely separate sibling `tester` project (its own repo/package.json/Playwright suite, black-box HTTP-only testing) — not built yet.
+3. Confirmed: `project-manager` will get the `Agent` tool to spawn the other subagents (same capability-escalation sign-off mr-fit required).
+4. Everything else (ticket-tagged commits, versioned requirements, ADRs, agent-log) ports over the same way, adapted to this project's stack (React/Vite instead of Vue/Pinia).
+5. **New idea to fold in (not yet in mr-fit either):** add a `researcher` agent — researches a topic/question, reports findings back to `project-manager`, who then routes actionable results to the right specialist (e.g. `main-dev` to implement). The user wants this pattern added to mr-fit too, but that's a separate repo we don't touch from here.
+
+Start next session by setting up `.claude/agents/` (project-manager, main-dev, tester, documenter, technical-documenter, code-reviewer, researcher), `project/` (requirements.md, tickets.md, roadmap.md, agent-log.md), and `.githooks/` (commit-msg, post-commit), mirroring mr-fit's structure.
+
+---
+
+Source: `Code_Tycoon_Implementation_Instructions.txt`. Ideas below are grouped as in the original doc; each top-level item has a status checkbox.
 
 ## Game Mechanic Upgrades
 
