@@ -75,7 +75,7 @@ Added a `gameStateRef` (`useRef`) kept in sync with `gameState` on every render,
 
 ## BUG-003: Pre-existing TypeScript errors in `tsc --noEmit` (`npm run lint`)
 
-- **Status:** open
+- **Status:** fixed
 - **Severity:** low (build via Vite/esbuild is unaffected; only `npm run lint` fails)
 - **Found:** 2026-07-05, while verifying BUG-001/BUG-002 fixes via `npm run lint`.
 - **Location:** [src/App.tsx:510-515](src/App.tsx#L510-L515) (`unknown` type from `Object.values(...).reduce(...)` without a typed accumulator) and [src/App.tsx:1267,1329](src/App.tsx#L1267) (`This expression is not callable. Type 'never' has no call signatures.`)
@@ -84,6 +84,138 @@ Added a `gameStateRef` (`useRef`) kept in sync with `gameState` on every render,
 
 Confirmed pre-existing (reproduced identically on `main` before this session's edits via `git stash`). `npm run lint` (`tsc --noEmit`) currently fails with 6 type errors unrelated to the TD/auto-save bugs. Doesn't block `npm run build` since Vite type-strips via esbuild without checking types, but it means the type-checker is currently useless as a safety net for this file.
 
-**Proposed fix**
+**Fix applied**
 
-Type the `reduce` accumulators explicitly (e.g. `.reduce((a: number, b: number) => a + b, 0)`) and investigate the two "never has no call signatures" sites — likely a lookup into a typed map/union that TS has narrowed to `never`.
+- The `Object.values(...).reduce(...)` calls were inferring `unknown` (root cause: no `@types/react`/general TS inference quirk — see BUG-009). Fixed by explicitly typing the intermediate arrays: `const buildingCounts: number[] = Object.values(prev.buildingsOwned);` etc., then reducing over the explicitly-typed array.
+- The two "never has no call signatures" errors were dead defensive code: `typeof upgrade.name === 'function' ? upgrade.name(level) : upgrade.name` in the Boardroom/prestige-upgrade rendering, copy-pasted from the regular-upgrade rendering where `name` genuinely can be a function. `PrestigeUpgrade.name` is always `string`, so TS correctly narrowed the function-call branch to `never`. Simplified to `const name = upgrade.name;`.
+
+**Verification**
+
+`npm run lint` passes with zero errors.
+
+---
+
+## BUG-004: Malformed/corrupted save can permanently white-screen the app
+
+- **Status:** fixed
+- **Severity:** medium
+- **Found:** 2026-07-06, Fable-model code review of the full codebase.
+- **Location:** [src/App.tsx](src/App.tsx) save-loading paths (initial load, import), plus new [src/ErrorBoundary.tsx](src/ErrorBoundary.tsx)
+
+**Description**
+
+Save data was never validated after `JSON.parse`/base64-decode — the load path and the file-import path both blindly spread the parsed object over `DEFAULT_STATE`. `STAGES[gameState.stage]` is accessed unguarded in several render spots. A hand-edited or corrupted save with `stage` outside `0-7` makes that lookup `undefined`, and `.icon`/`.name` on `undefined` throws during render. With no error boundary anywhere, this was a full white-screen crash — and since the bad save is already in `localStorage`, reloading doesn't help; the in-app Hard Reset button is unreachable because the crash happens before Settings can render.
+
+**Fix applied**
+
+- Added `sanitizeGameState(raw: unknown): GameState` ([src/App.tsx](src/App.tsx)), which validates and clamps every field of a loaded/imported save (numbers must be finite, most must be non-negative, `stage` is clamped to `[0, STAGES.length - 1]`, `*Owned` fields must be plain objects), falling back to `DEFAULT_STATE`'s value per-field on anything malformed. Wired into all 3 places a save gets loaded: initial encrypted-save load, legacy plain-JSON fallback, and file import.
+- Added `ErrorBoundary` ([src/ErrorBoundary.tsx](src/ErrorBoundary.tsx)), wrapping `<App />` in `main.tsx`, as a safety net for anything that still slips through (e.g. a future bug elsewhere). Its fallback UI offers "Reload" and "Clear Save & Reload" — the latter removes the `localStorage` save keys directly and reloads, so recovery doesn't depend on any React state being reachable.
+
+**Verification**
+
+Simulated the sanitizer against 10 malformed-input scenarios (out-of-range/negative/NaN `stage`, `null`/array `buildingsOwned`, negative/`Infinity` `loc`, empty object, `null` input) — all fall back safely to defaults; a normal valid save passes through unchanged. `npm run build` succeeds.
+
+---
+
+## BUG-005: Offline-progress effect isn't idempotent — double-awards LOC under React StrictMode in dev
+
+- **Status:** fixed
+- **Severity:** medium (dev-only; production build unaffected)
+- **Found:** 2026-07-06, Fable-model code review.
+- **Location:** [src/App.tsx:461-470](src/App.tsx#L461-L470)
+
+**Description**
+
+The "Offline progress and game loop" effect computes `earned` LOC synchronously in the effect body (not inside the interval callback) from the initial `gameState.lastSaved`, then calls `setGameState` — all inside a mount-once (`[]` deps) effect. `main.tsx` wraps the app in `<StrictMode>`, which intentionally double-invokes mount effects in development to surface exactly this class of impurity. Both invocations independently compute and award the same offline LOC, so `npm run dev` sessions show offline progress applied twice after being away. Production builds are unaffected since React only double-invokes in dev.
+
+**Fix applied**
+
+Added an `offlineProgressAppliedRef` (`useRef(false)`) guarding just the offline-progress-award block (not the game-loop interval setup below it, which already handles StrictMode correctly via its existing cleanup function). The ref flips to `true` on first run, so a second StrictMode invocation is a no-op for this part.
+
+**Verification**
+
+`npm run build` succeeds; code inspection confirms the interval setup/cleanup logic is untouched and still runs correctly on each invocation.
+
+---
+
+## BUG-006: Missing optional chaining on `prestigeUpgradesOwned` lookup
+
+- **Status:** fixed
+- **Severity:** low
+- **Found:** 2026-07-06, Fable-model code review.
+- **Location:** [src/App.tsx:469](src/App.tsx#L469) (in the offline-progress calculation)
+
+**Description**
+
+`gameState.prestigeUpgradesOwned['remote_work']` was accessed without `?.`, unlike every other read of this field in the file (e.g. lines 644, 735, 1269 at the time of the review). A save with `prestigeUpgradesOwned` explicitly `null`/missing (same malformed-save class as BUG-004) would throw here, on mount, before anything else can render — one of the concrete ways BUG-004's crash could actually trigger.
+
+**Fix applied**
+
+Changed to `gameState.prestigeUpgradesOwned?.['remote_work']`, consistent with every other read of this field.
+
+**Verification**
+
+Also now covered defensively by BUG-004's `sanitizeGameState`, which guarantees `prestigeUpgradesOwned` is always a plain object by the time it reaches state — so this can no longer be `null`/`undefined` in practice either way.
+
+---
+
+## BUG-007: Same unguarded-exponent overflow pattern as BUG-001, in the generic building/upgrade cost formula
+
+- **Status:** fixed
+- **Severity:** low (much harder to trigger than BUG-001 was — needs ~10-15k owned of a slow-growing building)
+- **Found:** 2026-07-06, Fable-model code review.
+- **Location:** [src/App.tsx](src/App.tsx), `calculateCost` (used by `getBuildingCost`/`getUpgradeCost`)
+
+**Description**
+
+`calculateCost` computes `Math.pow(growthFactor, owned)` and `Math.pow(growthFactor, n)` with no bound. For the slowest-growing building (growth factor 1.07), this overflows to `Infinity` once `owned` reaches roughly 10-15k, permanently locking that purchase — the exact failure mode BUG-001 fixed for the Refactor cost, just requiring an absurd owned-count rather than idle wall-clock time to reach.
+
+**Fix applied**
+
+Added a `getSafePow(base, exponent)` helper that clamps the exponent per-`growthFactor` (`700 / Math.log(base)`) so the result can never exceed roughly `1e304`, comfortably below `Number.MAX_VALUE`, regardless of how large `owned`/`n` get. Replaced the 3 unguarded `Math.pow(growthFactor, ...)` call sites inside `calculateCost` with this helper. `getRefactorCost` (BUG-001's fix) is untouched — it already has its own, separately-verified cap.
+
+**Verification**
+
+`npm run build` succeeds. The cap scales correctly per growth factor (a fast grower like `code_reviews` at 2.0 gets a much lower safe exponent than a slow grower like `buddy` at 1.07), so no realistic gameplay scenario is affected.
+
+---
+
+## BUG-008: Dead `Save` icon import
+
+- **Status:** fixed
+- **Severity:** low
+- **Found:** 2026-07-06, Fable-model code review.
+- **Location:** [src/App.tsx:5](src/App.tsx#L5)
+
+**Description**
+
+`Save` was imported from `lucide-react` but never rendered anywhere (confirmed via grep — only the English word "save" appears, in identifiers/strings like `codeTycoonSave`, `exportSave`). Harmless (tree-shaken by the bundler either way), but inconsistent with the AI-Studio-scaffold dependency cleanup from the previous session.
+
+**Fix applied**
+
+Removed `Save` from the `lucide-react` import list.
+
+**Verification**
+
+`npm run build` succeeds; bundle size unchanged (icon was already tree-shaken).
+
+---
+
+## BUG-009: No `@types/react`/`@types/react-dom` installed — TypeScript checking is largely inert for React APIs
+
+- **Status:** open
+- **Severity:** low-medium (deferred — not fixed this session, see below)
+- **Found:** 2026-07-06, while debugging a `tsc` error in the new `ErrorBoundary.tsx` (BUG-004's fix).
+- **Location:** `package.json` (missing devDependency), affects all of `src/`
+
+**Description**
+
+Neither `@types/react` nor `@types/react-dom` are installed anywhere in this project (`npm ls @types/react @types/react-dom` returns empty, and there's no vendored `.d.ts` for `react` in `node_modules/react`). Since `tsconfig.json` doesn't set `strict`/`noImplicitAny`, TypeScript silently treats the `react` import as an implicit `any` instead of erroring — which is why `npm run lint` mostly passes despite 1500+ lines of JSX: React-specific typing (props, JSX element types, `React.ElementType`, `React.ChangeEvent`, etc.) isn't actually being checked at all. This surfaced concretely when writing `ErrorBoundary.tsx`: `class X extends Component<Props, State>` couldn't infer `this.props` because `Component` itself resolves to `any`.
+
+**Why not fixed now**
+
+Installing `@types/react`/`@types/react-dom` and enabling real checking would very likely surface a batch of new type errors across the whole file (1500+ lines of previously "unchecked" JSX/React code) — an open-ended amount of work, not a targeted fix, and risks derailing tonight's goal of a working, playable build. Logged here instead of silently skipped so it doesn't get lost.
+
+**Proposed fix (future session)**
+
+Add `@types/react` and `@types/react-dom` as devDependencies matching the installed React 19 version, run `npm run lint`, and work through whatever surfaces as its own scoped pass — probably worth its own ticket/session rather than folding into an unrelated change.

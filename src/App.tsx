@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Terminal, Users, Zap, Coffee, Keyboard, Cpu, Trophy, 
   Home, Building, Building2, Landmark, GitBranch, 
-  Monitor, Server, Cloud, Rocket, Save, Trash2, ArrowUpCircle,
+  Monitor, Server, Cloud, Rocket, Trash2, ArrowUpCircle,
   Settings, Upload, Download, X, FileText, Wrench, Eye, AlertTriangle
 } from 'lucide-react';
 
@@ -172,6 +172,39 @@ const DEFAULT_STATE: GameState = {
   technicalDebt: 0,
 };
 
+// A save can come from localStorage or a hand-edited/corrupted imported file,
+// so it's untrusted input. Naively spreading it over DEFAULT_STATE (the old
+// approach) lets e.g. an out-of-range `stage` crash rendering with no way to
+// reach the in-app Hard Reset button, since the crash happens before Settings
+// can even render. Validate and clamp every field instead, falling back to
+// the default for anything malformed.
+const sanitizeGameState = (raw: unknown): GameState => {
+  const parsed = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {};
+
+  const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  const isNonNegativeNumber = (v: unknown): v is number => isFiniteNumber(v) && v >= 0;
+  const isRecord = (v: unknown): v is Record<string, number> =>
+    !!v && typeof v === 'object' && !Array.isArray(v);
+
+  const stage = isFiniteNumber(parsed.stage)
+    ? Math.min(STAGES.length - 1, Math.max(0, Math.floor(parsed.stage)))
+    : DEFAULT_STATE.stage;
+
+  return {
+    loc: isNonNegativeNumber(parsed.loc) ? parsed.loc : DEFAULT_STATE.loc,
+    totalLoc: isNonNegativeNumber(parsed.totalLoc) ? parsed.totalLoc : DEFAULT_STATE.totalLoc,
+    lifetimeLoc: isNonNegativeNumber(parsed.lifetimeLoc) ? parsed.lifetimeLoc : DEFAULT_STATE.lifetimeLoc,
+    buildingsOwned: isRecord(parsed.buildingsOwned) ? parsed.buildingsOwned : DEFAULT_STATE.buildingsOwned,
+    upgradesOwned: isRecord(parsed.upgradesOwned) ? parsed.upgradesOwned : DEFAULT_STATE.upgradesOwned,
+    stage,
+    ac: isNonNegativeNumber(parsed.ac) ? parsed.ac : DEFAULT_STATE.ac,
+    prestigeUpgradesOwned: isRecord(parsed.prestigeUpgradesOwned) ? parsed.prestigeUpgradesOwned : DEFAULT_STATE.prestigeUpgradesOwned,
+    prestigeCount: isNonNegativeNumber(parsed.prestigeCount) ? parsed.prestigeCount : DEFAULT_STATE.prestigeCount,
+    lastSaved: isFiniteNumber(parsed.lastSaved) ? parsed.lastSaved : DEFAULT_STATE.lastSaved,
+    technicalDebt: isNonNegativeNumber(parsed.technicalDebt) ? parsed.technicalDebt : DEFAULT_STATE.technicalDebt,
+  };
+};
+
 // --- OBFUSCATION ---
 const encodeSave = (data: GameState) => {
   const json = JSON.stringify(data);
@@ -335,14 +368,26 @@ const calculateClickPower = (state: GameState) => {
 };
 
 // Calculates cost and actual amount that can be bought
+// Same overflow risk BUG-001 fixed for the Refactor cost applies to any
+// exponential cost curve: Math.pow(growthFactor, exponent) can reach
+// Infinity given a large enough exponent (how large depends on
+// growthFactor — a slow 1.07 grower needs ~10k+ owned, a fast one needs
+// far less). Clamp the exponent per-growthFactor so the result can never
+// exceed ~1e304, comfortably below Number.MAX_VALUE, regardless of owned count.
+const getSafePow = (base: number, exponent: number) => {
+  if (base <= 1) return Math.pow(base, exponent);
+  const maxExponent = 700 / Math.log(base);
+  return Math.pow(base, Math.min(exponent, maxExponent));
+};
+
 const calculateCost = (baseCost: number, growthFactor: number, owned: number, loc: number, amount: BuyAmount, maxLevel?: number) => {
   const availableLevels = maxLevel !== undefined ? maxLevel - owned : Infinity;
   if (availableLevels <= 0) return { cost: 0, count: 0 };
 
   const getCostForN = (n: number) => {
     if (growthFactor === 1) return baseCost * n;
-    const currentBase = baseCost * Math.pow(growthFactor, owned);
-    return currentBase * ((Math.pow(growthFactor, n) - 1) / (growthFactor - 1));
+    const currentBase = baseCost * getSafePow(growthFactor, owned);
+    return currentBase * ((getSafePow(growthFactor, n) - 1) / (growthFactor - 1));
   };
 
   if (amount === 'next') {
@@ -358,7 +403,7 @@ const calculateCost = (baseCost: number, growthFactor: number, owned: number, lo
     if (growthFactor === 1) {
       n = Math.floor(loc / baseCost);
     } else {
-      const currentBase = baseCost * Math.pow(growthFactor, owned);
+      const currentBase = baseCost * getSafePow(growthFactor, owned);
       if (loc < currentBase) return { cost: Math.floor(currentBase), count: 1 }; // Return cost of 1 to show user
       n = Math.floor(Math.log(loc * (growthFactor - 1) / currentBase + 1) / Math.log(growthFactor));
     }
@@ -426,20 +471,21 @@ export default function App() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [offlineReport, setOfflineReport] = useState<{earned: number; reason: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const offlineProgressAppliedRef = useRef(false);
 
   const [gameState, setGameState] = useState<GameState>(() => {
     // Try loading encrypted save first
     const encSaved = localStorage.getItem('codeTycoonEncryptedSave');
     if (encSaved) {
       const parsed = decodeSave(encSaved);
-      if (parsed) return { ...DEFAULT_STATE, ...parsed };
+      if (parsed) return sanitizeGameState(parsed);
     }
     // Fallback to old plain JSON save if present
     const saved = localStorage.getItem('codeTycoonSave');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        return { ...DEFAULT_STATE, ...parsed };
+        return sanitizeGameState(parsed);
       } catch (e) {
         console.error("Failed to load save", e);
       }
@@ -460,13 +506,17 @@ export default function App() {
 
   // Offline progress and game loop
   useEffect(() => {
-    // Calculate offline progress
+    // Calculate offline progress. Guarded by a ref (rather than relying on
+    // this effect only running once) because React StrictMode intentionally
+    // double-invokes mount effects in dev, and this block isn't idempotent —
+    // without the guard, a second invocation would award offline LOC twice.
     const now = Date.now();
     const timeDiffMs = now - gameState.lastSaved;
-    if (timeDiffMs > 60000) { // more than 1 minute
+    if (!offlineProgressAppliedRef.current && timeDiffMs > 60000) { // more than 1 minute
+      offlineProgressAppliedRef.current = true;
        const prodPerSec = calculateProduction(gameState);
        if (prodPerSec > 0) {
-           const remoteWorkLvl = gameState.prestigeUpgradesOwned['remote_work'] || 0;
+           const remoteWorkLvl = gameState.prestigeUpgradesOwned?.['remote_work'] || 0;
            const extraMins = remoteWorkLvl * 30;
            
            const cap1 = (30 + extraMins) * 60; // 100%
@@ -517,8 +567,10 @@ export default function App() {
       setGameState(prev => {
         const prod = calculateProduction(prev);
         
-        const totalBuildings = Object.values(prev.buildingsOwned).reduce((a, b) => a + b, 0);
-        const totalUpgrades = Math.min(20, Object.values(prev.upgradesOwned).reduce((a, b) => a + b, 0));
+        const buildingCounts: number[] = Object.values(prev.buildingsOwned);
+        const upgradeCounts: number[] = Object.values(prev.upgradesOwned);
+        const totalBuildings = buildingCounts.reduce((a, b) => a + b, 0);
+        const totalUpgrades = Math.min(20, upgradeCounts.reduce((a, b) => a + b, 0));
         
         // 1 TD/min per 100 buildings (0.01 per building)
         // 0.5 TD/min per 10 upgrades (0.05 per upgrade), capped at 20 upgrades (max +1.0 TD/min)
@@ -698,7 +750,7 @@ export default function App() {
       const result = e.target?.result as string;
       const parsed = decodeSave(result);
       if (parsed) {
-        setGameState({ ...DEFAULT_STATE, ...parsed });
+        setGameState(sanitizeGameState(parsed));
         setShowOptions(false);
       } else {
         alert("Invalid save file!");
@@ -1026,7 +1078,7 @@ export default function App() {
                     const { cost, count } = getUpgradeCost(gameState, upgrade.id, buyAmount);
                     const canAfford = gameState.loc >= cost;
                     const Icon = upgrade.icon;
-                    const name = typeof upgrade.name === 'function' ? upgrade.name(level) : upgrade.name;
+                    const name = upgrade.name;
                     const desc = typeof upgrade.description === 'function' ? upgrade.description(level) : upgrade.description;
                     
                     return (
@@ -1096,7 +1148,7 @@ export default function App() {
                     const { cost } = getUpgradeCost(gameState, upgrade.id, 1);
                     const canAfford = gameState.loc >= cost;
                     const Icon = upgrade.icon;
-                    const name = typeof upgrade.name === 'function' ? upgrade.name(level) : upgrade.name;
+                    const name = upgrade.name;
                     const desc = typeof upgrade.description === 'function' ? upgrade.description(level) : upgrade.description;
                     
                     return (
@@ -1161,7 +1213,7 @@ export default function App() {
                       const level = gameState.upgradesOwned[upgrade.id] || 0;
                       const max = typeof upgrade.maxLevel === 'function' ? upgrade.maxLevel(gameState) : upgrade.maxLevel;
                       const Icon = upgrade.icon;
-                      const name = typeof upgrade.name === 'function' ? upgrade.name(level) : upgrade.name;
+                      const name = upgrade.name;
                       const desc = typeof upgrade.description === 'function' ? upgrade.description(level) : upgrade.description;
                       
                       return (
@@ -1274,7 +1326,7 @@ export default function App() {
                     const { cost, count } = getPrestigeUpgradeCost(gameState, upgrade.id, buyAmount);
                     const canAfford = gameState.ac >= cost;
                     const Icon = upgrade.icon;
-                    const name = typeof upgrade.name === 'function' ? upgrade.name(level) : upgrade.name;
+                    const name = upgrade.name;
                     const desc = typeof upgrade.description === 'function' ? upgrade.description(level) : upgrade.description;
                     
                     return (
@@ -1336,7 +1388,7 @@ export default function App() {
                     }).map(upgrade => {
                       const level = gameState.prestigeUpgradesOwned?.[upgrade.id] || 0;
                       const Icon = upgrade.icon;
-                      const name = typeof upgrade.name === 'function' ? upgrade.name(level) : upgrade.name;
+                      const name = upgrade.name;
                       const desc = typeof upgrade.description === 'function' ? upgrade.description(level) : upgrade.description;
                       
                       return (
