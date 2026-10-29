@@ -2,7 +2,7 @@
 
 ## Session notes — where we left off (2026-10-29)
 
-**Done this session:** fixed BUG-010 (Technical Debt soft-lock: TD capped at 200, Refactor now costs 30 seconds of current production with a 100 LOC minimum) and BUG-011 (values above 1T rendered as raw floats: suffixes now run to Vg with a scientific fallback); removed dead leftovers (`.env.local` Gemini key, unused deps `autoprefixer` / `@types/node` / duplicate `vite` entry, stale `.claude/` settings); rewrote `README.md`; bumped to v1.2.0. Backlog item 2 (purchase-efficiency UI) dropped as not needed — the current 1/10/50/100/next/max buttons are fine.
+**Done this session:** fixed BUG-010 (Technical Debt soft-lock: TD capped at 200, Refactor now costs 30 seconds of current production with a 100 LOC minimum) and BUG-011 (values above 1T rendered as raw floats: suffixes now run to Vg with a scientific fallback); removed dead leftovers (`.env.local` Gemini key, unused deps `autoprefixer` / `@types/node` / duplicate `vite` entry, stale `.claude/` settings); rewrote `README.md`; bumped to v0.0.6. Backlog item 2 (purchase-efficiency UI) dropped as not needed - the current 1/10/50/100/next/max buttons are fine.
 
 **Next time:** unchanged — move to the mr-fit multi-agent workflow (see the 2026-07-05 note below).
 

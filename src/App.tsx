@@ -832,7 +832,7 @@ export default function App() {
           </div>
 
           <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-zinc-100 tracking-tight hidden md:block">
-            Code Tycoon v0.06
+            Code Tycoon v0.0.6
           </div>
 
           <div className="flex items-center gap-3 flex-1 justify-end">
