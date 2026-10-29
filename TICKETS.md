@@ -39,6 +39,10 @@ Added `REFACTOR_COST_TD_CAP = 1000` and a shared `getRefactorCost(td)` helper ([
 
 Re-ran the Node simulation for the previously-overflowing scenarios (3/7/30 days idle at 200+ buildings) — cost now stays finite at ~2.47e43 in all cases instead of `Infinity`. `npm run build` succeeds.
 
+**Superseded by BUG-010 (2026-10-29)**
+
+The exponent cap kept the cost finite but not affordable. At TD 2,022 the cost is ~2.5e43 LOC, so the Refactor button is permanently disabled and the -60% penalty becomes a soft-lock. BUG-010 replaces the exponential formula with an income-based cost and caps TD at 200.
+
 ---
 
 ## BUG-002: Auto-save never actually fires
@@ -219,3 +223,49 @@ Installing `@types/react`/`@types/react-dom` and enabling real checking would ve
 **Proposed fix (future session)**
 
 Add `@types/react` and `@types/react-dom` as devDependencies matching the installed React 19 version, run `npm run lint`, and work through whatever surfaces as its own scoped pass — probably worth its own ticket/session rather than folding into an unrelated change.
+
+---
+
+## BUG-010: Technical Debt soft-locks the game - Refactor cost is unreachable, -60% penalty becomes permanent
+
+- **Status:** fixed
+- **Severity:** critical (unplayable save)
+- **Found:** 2026-10-29, from a player screenshot: TD 2,022, Refactor cost shown as a long raw exponential float (~2.5e43 LOC), button permanently disabled, "SEVERE: -60% Prod, HQ progression blocked".
+- **Location:** [src/App.tsx](src/App.tsx) - TD accrual in the game loop, `getRefactorCost`, `sanitizeGameState`, Refactor button
+
+**Description**
+
+Technical Debt only affects gameplay up to 200 (the last penalty tier, -60% production and blocked HQ progression), but the value itself had no cap. The Refactor cost was exponential: `100 * 1.1^TD`. BUG-001 capped the exponent so the result stays finite, but at TD 2,022 the cost is ~2.5e43 LOC, which no production curve in the game can reach. The only remaining recovery path was passive reduction from DevOps Engineers (-2 TD/min at 20 owned), roughly 15 hours of open-tab time at the worst penalty. That is a soft-lock, not a setback.
+
+**Fix applied**
+
+- Added `TD_MAX = 200` and clamped TD in the game loop and in `sanitizeGameState`. Existing saves above 200 are clamped on load; values above 200 had no gameplay effect anyway.
+- Replaced the exponential cost with an income-based one: `getRefactorCost(state) = max(100, calculateProduction(state) * 30)`. Refactoring still removes 10 TD. The cost is always about 30 seconds of current production, so it scales with the company and remains payable at every stage.
+- Removed `REFACTOR_COST_TD_CAP`, which is no longer needed.
+
+**Verification**
+
+- Node simulation of the loop: TD stops at 200; cost stays at 30 seconds of production; 20 refactors clear 200 TD; no overflow path remains.
+- Browser test with a save at TD 2,022: TD loads as 200, Refactor shows a compact cost, is clickable, and reduces TD by 10 per click; HQ stays blocked at 200 and unblocks below it.
+- `npm run lint` and `npm run build` pass.
+
+---
+
+## BUG-011: Numbers above 1T render as raw floats
+
+- **Status:** fixed
+- **Severity:** low (display only)
+- **Found:** 2026-10-29, in the same screenshot (the Refactor cost rendered as a long raw exponential float instead of a compact number).
+- **Location:** [src/App.tsx](src/App.tsx) `formatNumber`
+
+**Description**
+
+`formatNumber` only handled K/M/B/T. Any value at or above 1e15 fell through to the raw JavaScript number, so costs and totals showed long floats or scientific notation (e.g. `2.5e43`, `1.21e58T`).
+
+**Fix applied**
+
+Replaced the formatter with a suffix table (`K, M, B, T, Qa, Qi, Sx, Sp, Oc, No, Dc, UDc ... Vg`) and a scientific-notation fallback past the table. Handles rounding rollover (999,999 shows as 1.00M, not 1000.00K) and negative values.
+
+**Verification**
+
+Checked tier boundaries in Node (999, 1,000, 999,999, 1e15, 1e63, 1e70) and confirmed the compact cost in the browser test for BUG-010.

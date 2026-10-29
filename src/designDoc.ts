@@ -105,10 +105,10 @@ Purchased with Acquisition Capital (AC) in the Boardroom. Permanent bonuses.
 
 9. TECHNICAL DEBT
 -----------------
-- Technical Debt (TD) accumulates passively over time based on your infrastructure size.
+- Technical Debt (TD) accumulates passively over time based on your infrastructure size, and is capped at 200 (the last penalty tier).
 - Passive Generation: +0.01 TD/min per building owned, and +0.05 TD/min per upgrade owned (includes repeatable levels, capped at 20 upgrades for a max of +1.0 TD/min).
 - Production penalty thresholds: 10 TD = -5% production; 25 TD = -10%; 50 TD = -20% + small chance of a random building "shutdown"; 100 TD = -40% + higher shutdown chance; 200 TD = -60%, block further HQ stage progression until reduced.
-- Refactor button: cost = 100 * 1.1^(min(current TD, 1000)), removes 10 TD per use. TD itself is uncapped, but the exponent is clamped at 1000 so the cost can never overflow to Infinity on very long idle sessions.
+- Refactor button: costs 30 seconds of current production (minimum 100 LOC), removes 10 TD per use. The cost scales with your company, so it stays affordable at every stage.
 - DevOps Engineer: -0.1 TD/min per DevOps Engineer owned, capping at 20 owned (-2 TD/min max).
 - Code Reviewer: -2% TD accumulation per Code Reviewer owned, capping at 25 owned (25 x 2% = 50%).
 - Senior Developer and Software Architect: -2% TD generation rate each, flat (applies once if at least one is owned). Owning both gives -4% total.

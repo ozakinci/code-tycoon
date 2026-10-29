@@ -142,11 +142,25 @@ const UPGRADES: Upgrade[] = [
   { id: 'time_travel', name: 'Time-Traveling Compilers', baseCost: 1000000000000000000, growthFactor: 1, maxLevel: 1, description: () => `Global production x10. Code finishes before it starts.`, icon: Rocket, reqStage: 7 },
 ];
 
+// Compact suffixes for large values. The old version stopped at T, so anything
+// bigger rendered as a raw float (e.g. "2.46932918005993e+43"). Values past
+// the suffix list fall back to scientific notation instead.
+const NUMBER_SUFFIXES = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc', 'UDc', 'DDc', 'TDc', 'QaDc', 'QiDc', 'SxDc', 'SpDc', 'OcDc', 'NoDc', 'Vg'];
+
 const formatNumber = (num: number) => {
-  if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
-  if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
-  if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
-  return Math.floor(num).toLocaleString('en-US');
+  if (!Number.isFinite(num)) return 'Infinity';
+  if (num < 0) return '-' + formatNumber(-num);
+  if (num < 1000) return Math.floor(num).toLocaleString('en-US');
+
+  let tier = Math.floor(Math.log10(num) / 3);
+  let scaled = num / Math.pow(1000, tier);
+  // Rounding can push e.g. 999,999 to "1000.00K"; promote it a tier instead.
+  if (Number(scaled.toFixed(2)) >= 1000 && tier + 1 < NUMBER_SUFFIXES.length) {
+    tier += 1;
+    scaled /= 1000;
+  }
+  if (tier >= NUMBER_SUFFIXES.length) return num.toExponential(2);
+  return scaled.toFixed(2) + NUMBER_SUFFIXES[tier];
 };
 
 const PRESTIGE_UPGRADES: PrestigeUpgrade[] = [
@@ -157,6 +171,12 @@ const PRESTIGE_UPGRADES: PrestigeUpgrade[] = [
   { id: 'synergy', name: "Corporate Synergy", baseCost: 10, growthFactor: 3.0, description: (lvl) => `Global Production +${(lvl + 1) * 20}%.`, icon: Building2 },
   { id: '10x_culture', name: "10x Culture", baseCost: 25, growthFactor: 5.0, description: (lvl) => `Clicking is ${Math.pow(2, lvl + 1)}x as effective.`, icon: Zap },
 ];
+
+// Technical Debt only affects gameplay up to the last penalty tier (-60% at
+// 200 TD). Accumulating past it changed nothing except making the old
+// exponential Refactor cost unaffordable, which soft-locked long-running
+// saves. Cap the state at the last tier.
+const TD_MAX = 200;
 
 const DEFAULT_STATE: GameState = {
   loc: 0,
@@ -201,7 +221,9 @@ const sanitizeGameState = (raw: unknown): GameState => {
     prestigeUpgradesOwned: isRecord(parsed.prestigeUpgradesOwned) ? parsed.prestigeUpgradesOwned : DEFAULT_STATE.prestigeUpgradesOwned,
     prestigeCount: isNonNegativeNumber(parsed.prestigeCount) ? parsed.prestigeCount : DEFAULT_STATE.prestigeCount,
     lastSaved: isFiniteNumber(parsed.lastSaved) ? parsed.lastSaved : DEFAULT_STATE.lastSaved,
-    technicalDebt: isNonNegativeNumber(parsed.technicalDebt) ? parsed.technicalDebt : DEFAULT_STATE.technicalDebt,
+    technicalDebt: isNonNegativeNumber(parsed.technicalDebt)
+      ? Math.min(TD_MAX, parsed.technicalDebt)
+      : DEFAULT_STATE.technicalDebt,
   };
 };
 
@@ -261,13 +283,6 @@ const getTDPenaltyMultiplier = (td: number) => {
   if (td >= 10) return 0.95;
   return 1;
 };
-
-// TD has no upper bound (it only affects gameplay via the capped penalty above),
-// so a long-idle session can push it into the thousands. Cap the exponent here
-// to keep the cost finite (1.1^1000 ~= 2e41) instead of overflowing to Infinity,
-// which would otherwise permanently disable the Refactor button.
-const REFACTOR_COST_TD_CAP = 1000;
-const getRefactorCost = (td: number) => 100 * Math.pow(1.1, Math.min(td, REFACTOR_COST_TD_CAP));
 
 const getGlobalMultiplier = (state: GameState) => {
   let mult = 1;
@@ -348,6 +363,13 @@ const calculateProduction = (state: GameState) => {
     return total + (b.baseProduction * count * bMult * globalMult);
   }, 0);
 };
+
+// Refactor cost is tied to income instead of TD, so it stays affordable at
+// every stage and can never outrun what the company actually earns.
+const REFACTOR_COST_SECONDS = 30;
+const REFACTOR_MIN_COST = 100;
+const getRefactorCost = (state: GameState) =>
+  Math.max(REFACTOR_MIN_COST, calculateProduction(state) * REFACTOR_COST_SECONDS);
 
 const calculateClickPower = (state: GameState) => {
   let power = 1;
@@ -582,6 +604,7 @@ export default function App() {
         
         let newTD = (prev.technicalDebt || 0) + tdAccumulation - tdReduction;
         if (newTD < 0) newTD = 0;
+        if (newTD > TD_MAX) newTD = TD_MAX;
         
         let newBuildings = prev.buildingsOwned;
         if (newTD >= 50) {
@@ -809,7 +832,7 @@ export default function App() {
           </div>
 
           <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-zinc-100 tracking-tight hidden md:block">
-            Code Tycoon v0.05
+            Code Tycoon v0.06
           </div>
 
           <div className="flex items-center gap-3 flex-1 justify-end">
@@ -899,7 +922,7 @@ export default function App() {
             </div>
             <button
               onClick={() => {
-                const cost = getRefactorCost(gameState.technicalDebt || 0);
+                const cost = getRefactorCost(gameState);
                 if (gameState.loc >= cost) {
                   setGameState(prev => ({
                     ...prev,
@@ -908,15 +931,15 @@ export default function App() {
                   }));
                 }
               }}
-              disabled={gameState.loc < getRefactorCost(gameState.technicalDebt || 0) || Math.floor(gameState.technicalDebt || 0) <= 0}
+              disabled={gameState.loc < getRefactorCost(gameState) || Math.floor(gameState.technicalDebt || 0) <= 0}
               className={`w-full sm:w-auto px-4 py-2 rounded-lg font-bold transition-all shrink-0 ${
-                gameState.loc >= getRefactorCost(gameState.technicalDebt || 0) && Math.floor(gameState.technicalDebt || 0) > 0
+                gameState.loc >= getRefactorCost(gameState) && Math.floor(gameState.technicalDebt || 0) > 0
                   ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-sm cursor-pointer'
                   : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'
               }`}
             >
               Refactor (-10 TD)
-              <div className="text-[10px] font-mono font-normal">Cost: {formatNumber(getRefactorCost(gameState.technicalDebt || 0))} LOC</div>
+              <div className="text-[10px] font-mono font-normal">Cost: {formatNumber(getRefactorCost(gameState))} LOC</div>
             </button>
           </div>
 

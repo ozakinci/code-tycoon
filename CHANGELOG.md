@@ -1,5 +1,17 @@
 # Code Tycoon - Changelog
 
+## [v1.2.0] - Technical Debt Fix
+### Fixed
+- **Technical Debt soft-lock (BUG-010)**: TD could accumulate to thousands while the Refactor cost grew exponentially, leaving the button permanently unaffordable and the -60% penalty permanent. TD is now capped at 200 (the last penalty tier), and Refactor costs 30 seconds of current production (minimum 100 LOC) instead of `100 x 1.1^TD`, so it stays affordable at every stage. Existing saves above 200 TD are clamped on load.
+- **Raw floats for large numbers (BUG-011)**: values at or above 1T rendered as long floats or raw scientific notation. Number formatting now runs through K, M, B, T, Qa, Qi, Sx, Sp, Oc, No, Dc, up to Vg, then switches to clean scientific notation.
+
+### Changed
+- Removed dead leftovers: `.env.local` (unused Gemini key), unused npm dependencies (`autoprefixer`, `@types/node`, duplicate `vite` entry), and the stale `.claude/` settings.
+- Rewrote `README.md` to document gameplay, features, stack, scripts, structure and save format.
+- Dropped the unimplemented purchase-efficiency / buy-quantity backlog item; the existing 1/10/50/100/next/max buttons are the intended design.
+
+---
+
 ## [v1.1.0] - Stage 2 Expansion
 ### Added
 - **HQ Stage System**: Added progression through different headquarters (Mom's Garage -> Co-working Space -> Startup Office -> Corporate Campus).

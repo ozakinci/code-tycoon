@@ -1,5 +1,11 @@
 # Code Tycoon — Backlog
 
+## Session notes — where we left off (2026-10-29)
+
+**Done this session:** fixed BUG-010 (Technical Debt soft-lock: TD capped at 200, Refactor now costs 30 seconds of current production with a 100 LOC minimum) and BUG-011 (values above 1T rendered as raw floats: suffixes now run to Vg with a scientific fallback); removed dead leftovers (`.env.local` Gemini key, unused deps `autoprefixer` / `@types/node` / duplicate `vite` entry, stale `.claude/` settings); rewrote `README.md`; bumped to v1.2.0. Backlog item 2 (purchase-efficiency UI) dropped as not needed — the current 1/10/50/100/next/max buttons are fine.
+
+**Next time:** unchanged — move to the mr-fit multi-agent workflow (see the 2026-07-05 note below).
+
 ## Session notes — where we left off (2026-07-05)
 
 **Done this session:** cloned the repo from GitHub into this local folder and set up two-way sync; cut all ties with Google AI Studio (removed unused deps `@google/genai`/`express`/`dotenv`/`better-sqlite3`/`motion`, AI Studio scaffold files, orphaned `App.v1*.tsx` snapshots); fixed BUG-001 (Technical Debt/Refactor cost could overflow to `Infinity` after days idle) and BUG-002 (auto-save effect never actually fired due to a bad dependency array) — see `TICKETS.md`; refreshed `designDoc.ts` to match the current code; set up GitHub Pages deployment (auto-publishes on every push to `main` via `.github/workflows/deploy.yml`) — **the game is now live at https://ozakinci.github.io/code-tycoon/**.
@@ -22,48 +28,43 @@ Source: `Code_Tycoon_Implementation_Instructions.txt`. Ideas below are grouped a
 - [x] **1. Implement Technical Debt system** — done, see `src/App.tsx` (`technicalDebt` state, `getTDAcquisitionMultiplier`, `getTDReductionPerSec`, `getTDPenaltyMultiplier`, Refactor button, DevOps Engineer / Code Reviewer buildings).
   - Buildings/upgrades drive TD accrual (passive rate scaled by building/upgrade counts rather than a flat +1/+0.5 per purchase — equivalent idle-game framing of the same rule), plus passive time-based accrual.
   - Penalty thresholds implemented exactly: 10 TD = -5%, 25 TD = -10%, 50 TD = -20% (+ shutdown chance), 100 TD = -40% (+ higher shutdown chance), 200 TD = -60% and blocks further HQ stage progression.
-  - "Refactor" button present: cost = `100 * 1.1^TD`, removes 10 TD per use.
+  - "Refactor" button present: cost = 30 seconds of current production (minimum 100 LOC), removes 10 TD per use. TD is capped at 200 (see BUG-010).
   - DevOps Engineer (Stage 1, ~75,000 cost) reduces TD/sec; Code Reviewer (Stage 2, ~500,000 cost) reduces TD accumulation rate up to 50% at max stack.
   - Senior Developer and Software Architect each apply a flat -2% TD-generation reduction.
 
-- [ ] **2. Add purchase-efficiency and prestige-clarity UI**
-  - Cost-per-LOC/sec and payback time on every building/upgrade; highlight best current purchase.
-  - Near Sell Company: "AC if sold now" and "time to next AC tier."
-  - Buy x1 / x10 / x25 / Max buttons.
-
-- [ ] **3. Add active-play events** (requires Technical Debt system — already available)
+- [ ] **2. Add active-play events** (requires Technical Debt system — already available)
   - Golden-Cookie-style random pop-up every 45–120s, ~30s of production or short multiplier reward, no penalty for missing it.
   - Bug Outbreak: random building drops to 0% production until clicked back to life (10–30 clicks), every 5–15 min of active play.
 
-- [ ] **4. Add manually-triggered production burst ability ("Code Sprint")**
+- [ ] **3. Add manually-triggered production burst ability ("Code Sprint")**
   - Player-activated, 30–60s duration, 2–5x production and/or click power.
   - Cooldown 5–10 min, limited charges that regenerate over time.
 
-- [ ] **5. Add diminishing returns / soft caps**
+- [ ] **4. Add diminishing returns / soft caps**
   - Stock Options: taper multiplier from x1.5 toward x1.12 by level 5 instead of flat compounding.
   - Global production multipliers: soft-cap exponent above 1000x (`1000 * (multiplier/1000)^0.65`).
   - Building costs: incrementally increase growth factor after 50 owned (early-tier) / 25 owned (late-tier).
   - Upgrade level costs: stepped scaling — levels 1-5 normal, 6-10 x1.5, 11-15 x2.0, 16-20 x3.0.
 
-- [ ] **6. Add building role identity and synergy bonuses**
+- [ ] **5. Add building role identity and synergy bonuses**
   - Dedicated upgrade path for AI Code Generator, Cloud Server Farm, Quantum Computer (currently get nothing from the Equipment tree).
   - Synergy bonuses: Scrum Master + Junior Developers; Senior Developer + Software Architect; AI Code Generator + Cloud Server Farm.
   - Equipment set bonus for maxing Keyboard/Coffee/Chair counts relative to total hires.
 
-- [ ] **7. Extend the clicking scaling formula**
+- [ ] **6. Extend the clicking scaling formula**
   - Upgrade path raising "% of Total LOC/sec added to Click Power" from 1% baseline toward 3–5%.
 
-- [ ] **8. Add remaining UI/QoL features**
+- [ ] **7. Add remaining UI/QoL features**
   - Production breakdown tooltip (base → equipment → upgrades → TD penalty → event modifiers).
   - Stats tab: lifetime LOC, total clicks, prestige count, time played, peak LOC/sec.
   - Toast notifications for events/milestones.
-  - Large-number formatting (K/M/B/T/Qa/Qi...) with scientific-notation toggle.
+  - [x] Large-number formatting (K/M/B/T/Qa/Qi... up to Vg; scientific notation beyond).
   - Auto-save every 30s; "last saved Xs ago"; import preview before overwrite.
 
-- [ ] **9. Add first-sale AC guarantees**
+- [ ] **8. Add first-sale AC guarantees**
   - Guarantee ≥1 AC on first Stage 2 sale; +3 bonus AC on first Stage 3 sale; +10 bonus AC on first Stage 4 sale.
 
-- [ ] **10. Technical/architecture cleanup (low priority)**
+- [ ] **9. Technical/architecture cleanup (low priority)**
   - Move game state to `useReducer` or a lightweight state library once `useState` becomes hard to manage.
   - Use `requestAnimationFrame` for UI animations instead of the fixed game-loop tick.
   - Change save export/import to JSON with a version field, keeping Base64 as fallback.
