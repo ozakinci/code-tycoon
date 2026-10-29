@@ -23,7 +23,7 @@ Live build: https://ozakinci.github.io/code-tycoon/
 
 ## Stack
 
-React 19, TypeScript, Vite 6, Tailwind CSS 4, lucide-react. No backend and no external API; the game runs entirely in the browser.
+React 19, TypeScript, Vite 6, Tailwind CSS 4, lucide-react. No backend and no external API. The game runs entirely in the browser.
 
 ## Run locally
 
@@ -50,8 +50,9 @@ Every push to `main` builds and publishes to GitHub Pages through `.github/workf
 
 - `src/App.tsx` - game state, formulas, game loop, and UI.
 - `src/designDoc.ts` - design document shown in the in-game settings.
+- `src/index.css` - Tailwind import and global styles.
 - `src/ErrorBoundary.tsx`, `src/main.tsx` - app entry and crash recovery.
-- `TICKETS.md` - bug tracker with root cause and verification per ticket.
+- `TICKETS.md` - bug tracker with root cause, status and fix details.
 - `BACKLOG.md` - planned mechanics and content.
 - `CHANGELOG.md` - release history.
 

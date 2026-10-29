@@ -2,13 +2,13 @@
 
 Bug/issue tracker for local development. Each ticket has an ID, status, severity, and enough detail to pick up and fix independently.
 
-Statuses: `open` → `in-progress` → `fixed` → `verified`
+Statuses: `open` → `in-progress` → `fixed` → `verified`. `superseded` marks a fix that a later ticket replaced.
 
 ---
 
 ## BUG-001: Technical Debt cost formula overflows to Infinity on long idle sessions
 
-- **Status:** fixed
+- **Status:** superseded
 - **Severity:** high
 - **Found:** 2026-07-05, via code review + Node simulation while investigating a report of the game becoming unresponsive after being left open a long time.
 - **Location:** [src/App.tsx:840-857](src/App.tsx#L840-L857) (Refactor button cost/disabled logic)
@@ -251,7 +251,7 @@ Technical Debt only affects gameplay up to 200 (the last penalty tier, -60% prod
 
 ---
 
-## BUG-011: Numbers above 1T render as raw floats
+## BUG-011: Numbers at or above 1Qa (1e15) render as raw floats
 
 - **Status:** fixed
 - **Severity:** low (display only)

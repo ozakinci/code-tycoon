@@ -2,7 +2,7 @@
 
 ## Session notes — where we left off (2026-10-29)
 
-**Done this session:** fixed BUG-010 (Technical Debt soft-lock: TD capped at 200, Refactor now costs 30 seconds of current production with a 100 LOC minimum) and BUG-011 (values above 1T rendered as raw floats: suffixes now run to Vg with a scientific fallback); removed dead leftovers (`.env.local` Gemini key, unused deps `autoprefixer` / `@types/node` / duplicate `vite` entry, stale `.claude/` settings); rewrote `README.md`; bumped to v0.0.6. Backlog item 2 (purchase-efficiency UI) dropped as not needed - the current 1/10/50/100/next/max buttons are fine.
+**Done this session:** fixed BUG-010 (Technical Debt soft-lock: TD capped at 200, Refactor now costs 30 seconds of current production with a 100 LOC minimum) and BUG-011 (values at or above 1Qa rendered as raw floats: suffixes now run to Vg with a scientific fallback); removed dead leftovers (`.env.local` Gemini key, unused deps `autoprefixer` / `@types/node` / duplicate `vite` entry, stale `.claude/` settings); rewrote `README.md`; bumped to v0.0.6. The changelog history now uses the same 0.0.x scheme: v0.0.1 initial release, v0.0.5 Stage 2 Expansion, v0.0.6 current. Backlog item 2 (purchase-efficiency UI) dropped as not needed - the current 1/10/50/100/next/max buttons are fine.
 
 **Next time:** unchanged — move to the mr-fit multi-agent workflow (see the 2026-07-05 note below).
 
@@ -59,7 +59,7 @@ Source: `Code_Tycoon_Implementation_Instructions.txt`. Ideas below are grouped a
   - Stats tab: lifetime LOC, total clicks, prestige count, time played, peak LOC/sec.
   - Toast notifications for events/milestones.
   - [x] Large-number formatting (K/M/B/T/Qa/Qi... up to Vg; scientific notation beyond).
-  - Auto-save every 30s; "last saved Xs ago"; import preview before overwrite.
+  - "Last saved Xs ago" indicator; import preview before overwrite.
 
 - [ ] **8. Add first-sale AC guarantees**
   - Guarantee ≥1 AC on first Stage 2 sale; +3 bonus AC on first Stage 3 sale; +10 bonus AC on first Stage 4 sale.

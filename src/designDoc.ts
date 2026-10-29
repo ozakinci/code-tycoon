@@ -12,7 +12,7 @@ Code Tycoon is an incremental (clicker/idle) game where the player starts as a s
 - Icons: Lucide-React
 - Architecture: Client-Side Single Page Application (SPA).
 - State Management: React useState / useEffect for game loop (10 ticks per second).
-- Persistence: LocalStorage for saving game state (Base64 encoded for export/import).
+- Persistence: LocalStorage for game state. Saves are Base64-encoded JSON with a one-character shift. Export/import uses the same format.
 
 3. CORE GAMEPLAY LOOP
 ---------------------
@@ -20,16 +20,16 @@ Code Tycoon is an incremental (clicker/idle) game where the player starts as a s
 2. Spend LOC to hire developers (Buildings) which generate LOC automatically per second.
 3. Spend LOC on Upgrades to multiply production (both manual clicking and automated generation).
 4. Upgrade the Headquarters (Stages) to unlock better upgrades and buyout multipliers.
-5. Reach Stage 2 or higher to "Sell Company" (Prestige). This resets LOC, Buildings, and Upgrades, but grants "Acquisition Capital" (AC).
+5. Reach Stage 2 or higher to "Sell Company" (Prestige). This resets LOC, Buildings, Upgrades, HQ stage and Technical Debt, keeps Founder Perks, lifetime LOC and prestige count, and adds new "Acquisition Capital" (AC) to your existing balance.
 6. Spend AC on Founder Perks (Prestige Upgrades) which are permanent bonuses that persist across all future startups.
 7. Repeat the process to scale infinitely.
 
 4. MECHANICS & FORMULAS
 -----------------------
-- Building Cost Formula: BaseCost * (GrowthFactor ^ OwnedCount)
-- Total LOC Per Second: Sum of (BuildingCount * BaseProduction) multiplied by relevant Upgrade multipliers and Founder Perks.
+- Building Cost Formula: BaseCost * (GrowthFactor ^ OwnedCount), before the Brand Recognition discount.
+- Total LOC Per Second: Sum of (BuildingCount * BaseProduction) multiplied by all applicable multipliers (milestones, equipment, upgrades, Founder Perks) and the Technical Debt penalty.
 - Click Power: Base click power (boosted by specific upgrades and perks) + 1% of Total LOC Per Second.
-- Acquisition Capital (AC) Calculation: Base AC = floor( (Total Lifetime LOC / 100,000) ^ 0.5 ). Total AC gained = Base AC * BuyerMultiplier (based on current Stage).
+- Acquisition Capital (AC) Calculation: Base AC = floor( (Total LOC earned this run / 100,000) ^ 0.5 ). Total AC gained = Base AC * BuyerMultiplier (based on current Stage).
 
 5. HQ STAGES
 ------------
@@ -45,7 +45,7 @@ Stage 7: Orbital Station (Cost: 100,000,000,000,000,000,000 LOC, Buyer: Global A
 
 6. BUILDINGS (HIRES)
 --------------------
-Each building produces a base amount of LOC per second and increases the total "Hires" count, which interacts with Equipment Upgrades.
+Each building produces a base amount of LOC per second. Buildings with a Hires value add to the total "Hires" count, which interacts with Equipment Upgrades.
 1. College Buddy: Base Cost 15, Base Prod 1, Growth 1.07 (Hires: 1)
 2. Fiverr Freelancer: Base Cost 150, Base Prod 5, Growth 1.08 (Hires: 1)
 3. Junior Developer: Base Cost 1,000, Base Prod 25, Growth 1.09 (Hires: 1)
