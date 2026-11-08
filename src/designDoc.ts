@@ -11,8 +11,9 @@ Code Tycoon is an incremental (clicker/idle) game where the player starts as a s
 - Styling: Tailwind CSS
 - Icons: Lucide-React
 - Architecture: Client-Side Single Page Application (SPA).
-- State Management: React useState / useEffect for game loop (10 ticks per second).
-- Persistence: LocalStorage for game state. Saves are Base64-encoded JSON with a one-character shift. Export/import uses the same format.
+- State Management: React useState / useEffect for game loop (10 ticks per second, elapsed time capped at 1 second per tick).
+- Persistence: LocalStorage for game state. Saves are versioned, Base64-encoded JSON with a one-character shift. Export/import uses the same format. Every loaded or imported save is validated and clamped field by field; malformed nested counts are dropped rather than trusted. If LocalStorage is unavailable, the game keeps running and shows a warning in Settings.
+- Testing: Vitest unit tests cover save sanitizing, encoding, cost math, formatting, milestones, prestige payout, and offline tiers. TypeScript runs in strict mode.
 
 3. CORE GAMEPLAY LOOP
 ---------------------
@@ -27,8 +28,9 @@ Code Tycoon is an incremental (clicker/idle) game where the player starts as a s
 4. MECHANICS & FORMULAS
 -----------------------
 - Building Cost Formula: BaseCost * (GrowthFactor ^ OwnedCount), before the Brand Recognition discount.
-- Total LOC Per Second: Sum of (BuildingCount * BaseProduction) multiplied by all applicable multipliers (milestones, equipment, upgrades, Founder Perks) and the Technical Debt penalty.
+- Total LOC Per Second: Sum of (BuildingCount * BaseProduction) for buildings that are not in an outage, multiplied by all applicable multipliers (milestones, equipment, upgrades, Founder Perks) and the Technical Debt penalty.
 - Click Power: Base click power (boosted by specific upgrades and perks) + 1% of Total LOC Per Second.
+- Offline Progress: Earned at 100% for the first 30 minutes, 50% until 120 minutes, and 20% until 240 minutes. Remote Work Policy adds 30 minutes to every threshold. A hidden browser tab, or a long foreground stall such as a sleeping laptop, uses these same offline rules, so a throttled timer cannot award full-rate production.
 - Acquisition Capital (AC) Calculation: Base AC = floor( (Total LOC earned this run / 100,000) ^ 0.5 ). Total AC gained = Base AC * BuyerMultiplier (based on current Stage).
 
 5. HQ STAGES
@@ -74,8 +76,8 @@ B. Equipment Brands (Increases the bonus of Equipment Counts):
 - Chair Brands (Max Lvl scales with Stage): Cost 2,500,000 (x10 growth). Each level adds +200% to chair bonus. Requires Stage 2.
 
 C. Other Repeatables:
-- Code Reviews: Cost 2,500 (x2.0 growth). +10% base production to all buildings per level.
-- Stock Options (Max Lvl 5): Cost 25,000,000 (x10 growth). Global production x1.5 per level. Requires Stage 2.
+- Code Reviews: Cost 2,500 (x2.0 growth). Adds +10% to each building's multiplier per level, additive after milestones.
+- Stock Options (Max Lvl 5): Cost 25,000,000 (x10 growth). Global production x1.5 per level (compounding; current multiplier = 1.5 ^ level). Requires Stage 2.
 
 D. One-Time Tech Upgrades (Max Lvl 1):
 - StackOverflow Premium: Cost 500. Clicking is 5x effective.
@@ -100,14 +102,15 @@ Purchased with Acquisition Capital (AC) in the Boardroom. Permanent bonuses.
 - Angel Investor: Base Cost 2 (x2.0 growth). Start runs with 50,000 LOC per level.
 - Remote Work Policy: Base Cost 3 (x1.7 growth, Max Lvl 10). Adds +30 minutes to all offline progress cap thresholds per level.
 - Brand Recognition: Base Cost 5 (x1.8 growth, Max Lvl 20). Reduces all building costs by 2% per level.
-- Corporate Synergy: Base Cost 10 (x3.0 growth). Global Production +20% per level.
+- Corporate Synergy: Base Cost 10 (x3.0 growth). Adds +0.20 to the global production multiplier per level (additive with other global upgrades, not a separate multiplier).
 - 10x Culture: Base Cost 25 (x5.0 growth). Clicking is x2 as effective per level (exponential).
 
 9. TECHNICAL DEBT
 -----------------
 - Technical Debt (TD) accumulates passively over time based on your infrastructure size, and is capped at 200 (the last penalty tier).
 - Passive Generation: +0.01 TD/min per building owned, and +0.05 TD/min per upgrade owned (includes repeatable levels, capped at 20 upgrades for a max of +1.0 TD/min).
-- Production penalty thresholds: 10 TD = -5% production; 25 TD = -10%; 50 TD = -20% + small chance of a random building "shutdown"; 100 TD = -40% + higher shutdown chance; 200 TD = -60%, block further HQ stage progression until reduced.
+- Production penalty thresholds: 10 TD = -5% production; 25 TD = -10%; 50 TD = -20% + occasional temporary outages; 100 TD = -40% + more frequent temporary outages; 200 TD = -60%, block further HQ stage progression until reduced.
+- Temporary outages: at 50+ TD, one building type may go offline for 30 seconds. The roll is about 0.5% per second at 50-99 TD and 2% per second at 100+ TD. A building is chosen randomly, weighted by how many of that type you own, so a single rare Quantum Computer is less likely to be picked than one of many College Buddies. Only one outage is active at a time. The building recovers automatically when the timer ends, or the player can use "Fix now". Outages are saved and validated on load, and buildings are never permanently deleted.
 - Refactor button: costs 30 seconds of current production (minimum 100 LOC), removes 10 TD per use. The cost scales with your company, so it stays affordable at every stage.
 - DevOps Engineer: -0.1 TD/min per DevOps Engineer owned, capping at 20 owned (-2 TD/min max).
 - Code Reviewer: -2% TD accumulation per Code Reviewer owned, capping at 25 owned (25 x 2% = 50%).

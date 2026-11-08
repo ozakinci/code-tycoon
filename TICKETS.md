@@ -207,22 +207,26 @@ Removed `Save` from the `lucide-react` import list.
 
 ## BUG-009: No `@types/react`/`@types/react-dom` installed — TypeScript checking is largely inert for React APIs
 
-- **Status:** open
-- **Severity:** low-medium (deferred — not fixed this session, see below)
+- **Status:** fixed
+- **Severity:** low-medium
 - **Found:** 2026-07-06, while debugging a `tsc` error in the new `ErrorBoundary.tsx` (BUG-004's fix).
-- **Location:** `package.json` (missing devDependency), affects all of `src/`
+- **Fixed:** 2026-11-07
+- **Location:** `package.json`, `tsconfig.json`, all of `src/`
 
 **Description**
 
-Neither `@types/react` nor `@types/react-dom` are installed anywhere in this project (`npm ls @types/react @types/react-dom` returns empty, and there's no vendored `.d.ts` for `react` in `node_modules/react`). Since `tsconfig.json` doesn't set `strict`/`noImplicitAny`, TypeScript silently treats the `react` import as an implicit `any` instead of erroring — which is why `npm run lint` mostly passes despite 1500+ lines of JSX: React-specific typing (props, JSX element types, `React.ElementType`, `React.ChangeEvent`, etc.) isn't actually being checked at all. This surfaced concretely when writing `ErrorBoundary.tsx`: `class X extends Component<Props, State>` couldn't infer `this.props` because `Component` itself resolves to `any`.
+Neither `@types/react` nor `@types/react-dom` were installed anywhere in this project (`npm ls @types/react @types/react-dom` returned empty, and there was no vendored `.d.ts` for `react` in `node_modules/react`). Since `tsconfig.json` didn't set `strict`/`noImplicitAny`, TypeScript silently treated the `react` import as an implicit `any` instead of erroring — which is why `npm run lint` mostly passed despite 1500+ lines of JSX. React-specific typing (props, JSX element types, `React.ElementType`, `React.ChangeEvent`, etc.) wasn't actually being checked at all.
 
-**Why not fixed now**
+**Fix applied**
 
-Installing `@types/react`/`@types/react-dom` and enabling real checking would very likely surface a batch of new type errors across the whole file (1500+ lines of previously "unchecked" JSX/React code) — an open-ended amount of work, not a targeted fix, and risks derailing tonight's goal of a working, playable build. Logged here instead of silently skipped so it doesn't get lost.
+- Installed `@types/react@^19`, `@types/react-dom@^19` and Vitest (currently 5.1).
+- Enabled `strict`, `noFallthroughCasesInSwitch` and `noImplicitOverride` in `tsconfig.json`.
+- Fixed the errors that real React types exposed: added an explicit `string` return type to `formatNumber` and `override` modifiers in `ErrorBoundary`.
+- The `ErrorBoundary` no longer declares `props` manually; the React types now infer it correctly.
 
-**Proposed fix (future session)**
+**Verification**
 
-Add `@types/react` and `@types/react-dom` as devDependencies matching the installed React 19 version, run `npm run lint`, and work through whatever surfaces as its own scoped pass — probably worth its own ticket/session rather than folding into an unrelated change.
+`npm run lint` passes with strict TypeScript. `npm test` runs 19 tests, and `npm run build` succeeds. The deploy workflow now runs lint and tests before building.
 
 ---
 
@@ -269,3 +273,256 @@ Replaced the formatter with a suffix table (`K, M, B, T, Qa, Qi, Sx, Sp, Oc, No,
 **Verification**
 
 Checked tier boundaries in Node (999, 1,000, 999,999, 1e15, 1e63, 1e70) and confirmed the compact cost in the browser test for BUG-010.
+
+---
+
+## BUG-012: High Technical Debt permanently deletes buildings
+
+- **Status:** fixed
+- **Severity:** critical (progress loss)
+- **Found:** 2026-11-07, code review of the TD game-loop block.
+- **Fixed:** 2026-11-07
+- **Location:** [src/App.tsx](src/App.tsx) game loop, TD shutdown block; TD panel; save sanitizer
+
+**Description**
+
+At TD ≥ 50, each tick rolled a random chance (1%/s at 50–99 TD, 5%/s at 100+) to pick an owned building type uniformly and decrement its count permanently. The UI and design document called the event a “shutdown,” which implied recovery, but the building was simply gone. At 100+ TD the expected loss was roughly three buildings per minute. A single rare Quantum Computer could be deleted while hundreds of College Buddies were untouched, and leaving a high-TD tab open could erase an hour of progress. For a family game, this was the most player-hostile behavior in the build.
+
+**Fix applied**
+
+- Replaced permanent deletion with an `outages: Record<string, number>` map (building id → expiry timestamp).
+- At 50+ TD, one building type can go offline for 30 seconds. Chance is 0.005/s at 50–99 TD and 0.02/s at 100+.
+- Selection is weighted by owned count, so a single rare building is less likely to be chosen than a common one.
+- Only one outage is active at a time. It recovers automatically, or the player can press “Fix now”.
+- Outaged buildings contribute zero production; their owned counts never change.
+- The TD panel shows the building name, countdown and repair action. Building cards show “Outage — 0 LOC/s”.
+- The save sanitizer keeps at most one known outage, drops expired/unknown entries and clamps expiry to 30 seconds in the future.
+- The in-game design document now describes temporary outages.
+
+**Verification**
+
+- Added a unit test that confirms an outaged building has zero production, retains its owned count, and recovers after expiry.
+- Added sanitizer tests for unknown, expired and implausibly distant outage entries.
+- `npm run lint`, `npm test` (19 tests) and `npm run build` pass.
+- A manual in-browser check at TD 50+ is still part of the v0.0.7 playtest.
+
+---
+
+## BUG-013: Save sanitizer trusted nested `*Owned` values
+
+- **Status:** fixed
+- **Severity:** high (broken economy/crash risk)
+- **Found:** 2026-11-07, code review of `sanitizeGameState`.
+- **Fixed:** 2026-11-07
+- **Location:** [src/App.tsx](src/App.tsx) `sanitizeGameState`, initial load, import path
+
+**Description**
+
+The old sanitizer checked that `buildingsOwned`, `upgradesOwned` and `prestigeUpgradesOwned` were objects, but not that their values were valid numbers. A save with `{ "buddy": "abc" }`, negative counts, `NaN`, `Infinity`, unknown IDs or an oversized brand level could produce NaN production, negative costs, free purchases or infinite values. The game could appear to run while every number became unusable, and a crash could make the in-app reset unreachable.
+
+**Fix applied**
+
+- Every nested count must be a finite, non-negative integer; zero and malformed values are dropped.
+- Unknown building/upgrade/perk IDs are ignored.
+- Building counts are capped at 1e9.
+- Upgrade counts are capped by their static max, dynamic max (equipment = current hires; brands = stage) or 1e6.
+- Prestige counts are capped by perk max or 1e6.
+- `stage` is floored and clamped to the valid range; `technicalDebt` is clamped to 0–200; `prestigeCount` is floored; `lastSaved` is finite and clamped to 0–now.
+- Saves gain a `version: 1` field.
+- Equipment is clamped to the sanitized hire count, so a save cannot retain more keyboards than people.
+
+**Verification**
+
+- Eight sanitizer tests cover non-object input, out-of-range stage/TD, strings, negatives, zero, NaN, Infinity, unknown IDs, fractional counts, equipment-over-hire, brand-over-stage, perk maxima, outages and malicious values.
+- A round-trip test confirms encode/decode preserves a valid save.
+- `npm run lint`, `npm test` and `npm run build` pass.
+
+---
+
+## BUG-014: Background tabs bypassed offline caps; short reloads lost progress
+
+- **Status:** fixed
+- **Severity:** high (economy consistency)
+- **Found:** 2026-11-07, code review of the game loop and visibility behavior.
+- **Fixed:** 2026-11-07
+- **Location:** [src/App.tsx](src/App.tsx) offline progress and game-loop effect
+
+**Description**
+
+The game loop computed `dt` from `Date.now()` without a cap. A hidden tab throttled to one tick per minute could therefore award a full minute of production per tick at 100% rate, while closing the tab was capped by the offline rules. This punished the idle behavior the game is named for. Separately, the initial offline award only fired after 60 seconds, so short reloads lost a few seconds of progress.
+
+**Fix applied**
+
+- Added a shared `calculateOfflineProgress(prodPerSec, secondsOffline, remoteWorkLevel)` used by both initial load and visibility return.
+- Capped each live tick at 1 second (`MAX_LIVE_TICK_SECONDS`).
+- While `document.hidden`, the interval does not run the economy.
+- On `visibilitychange` to visible, the hidden interval is awarded through the offline tiers.
+- Initial loads award elapsed time after 5 seconds; the welcome-back modal appears only above 60 seconds.
+- Kept the `offlineProgressAppliedRef` guard for React StrictMode.
+
+**Verification**
+
+- Offline tier tests cover 1 minute, 30 minutes, 2 hours, 10,000 seconds and Remote Work I.
+- `npm run lint`, `npm test` and `npm run build` pass.
+- A manual hidden-tab check is part of the v0.0.7 playtest.
+
+---
+
+## BUG-015: Prestige could double-pay; prestige and import had no confirmation
+
+- **Status:** fixed
+- **Severity:** high (progress loss / economy exploit)
+- **Found:** 2026-11-07, code review of `handlePrestige` and the import flow.
+- **Fixed:** 2026-11-07
+- **Location:** [src/App.tsx](src/App.tsx) `handlePrestige`, Boardroom, import handler and modals
+
+**Description**
+
+`handlePrestige` calculated `acGained` from the render-time `gameState` outside the functional updater. A fast double-click could run the handler twice before React applied the first update, awarding AC twice and incrementing the prestige count twice. The “Accept Acquisition” button also wiped the run immediately, with no summary of what would be lost. Importing a save replaced the current company immediately, with no preview or backup.
+
+**Fix applied**
+
+- Moved AC calculation inside `setGameState(prev => ...)`. The second invocation sees stage 0 and becomes a no-op.
+- Added a prestige confirmation modal listing payout, what resets (LOC, buildings, upgrades, HQ, TD, outages) and what is kept (perks, AC, lifetime LOC, acquisition count).
+- Added an import preview comparing current and imported stage/LOC/AC and requiring confirmation.
+- Added “Download Current Save First” to the import modal.
+- Closing/replacing a save also closes the prestige/import modals.
+
+**Verification**
+
+- `npm run lint`, `npm test` and `npm run build` pass.
+- The double-click guard is guaranteed by the functional updater logic; a manual click test is part of the playtest.
+
+---
+
+## BUG-016: Equipment appears “Maxed” when the player has zero hires
+
+- **Status:** fixed
+- **Severity:** medium (new-player confusion)
+- **Found:** 2026-11-07, code review of dynamic max levels.
+- **Fixed:** 2026-11-07
+- **Location:** [src/App.tsx](src/App.tsx) equipment upgrades and Upgrades tab filters
+
+**Description**
+
+`eq_keyboard`, `eq_coffee` and `eq_chair` use `maxLevel: (state) => getTotalHires(state)`. At zero hires the max is 0, so the old filter treated the equipment as exhausted and displayed “Maxed” before the player could possibly use it.
+
+**Fix applied**
+
+- Added `isUpgradeLocked` (dynamic max ≤ 0) and `isUpgradeMaxed` (max > 0 and level ≥ max).
+- Locked equipment remains visible as a disabled card with “Requires a hire”.
+- Exhausted technologies now only include genuinely maxed upgrades.
+
+**Verification**
+
+- Type-check and build pass.
+- A fresh-save visual check is included in the playtest.
+
+---
+
+## BUG-017: Misleading labels, per-unit production and upgrade descriptions
+
+- **Status:** fixed
+- **Severity:** low-medium (comprehension)
+- **Found:** 2026-11-07, content/UX review.
+- **Fixed:** 2026-11-07
+- **Location:** [src/App.tsx](src/App.tsx) top stats, Settings, building cards, upgrade/perk cards and content descriptions
+
+**Description**
+
+Several labels did not match the underlying values:
+
+- “Total LOC Written” showed `totalLoc` (this run) on the main screen, while Settings used the same label for `lifetimeLoc`.
+- Building cards showed `+X LOC/s` without saying it was per unit, not the total for the owned count.
+- Equipment bonuses were invisible as a team-wide fraction.
+- Many upgrade/perk descriptions previewed the next level without saying “Next”, and some were off by one (equipment brands) or described a different formula (Stock Options, Code Reviews, Corporate Synergy).
+- TD had no net rate, next threshold or outage cause.
+
+**Fix applied**
+
+- Renamed the main stat to “LOC This Run”; Settings shows “Lifetime LOC” and “LOC This Run”.
+- Building cards show `+X LOC/s each`, total output for owned units, and outage state.
+- Added a team-equipment summary (keyboards/coffee/chairs equipped, total hires, human multiplier).
+- Added TD net rate, next penalty threshold, progress bar, outage banner and repair action.
+- Upgrade cards show “Current: …” and “Next level: …” where they differ; perk cards do the same.
+- Corrected equipment brand, Stock Options, Code Reviews, Corporate Synergy, Founder’s Network, Angel Investor, Remote Work, Brand Recognition and 10x Culture descriptions to match their formulas.
+- Updated the in-game design document.
+
+**Verification**
+
+- Formatting/milestone tests pass; lint, test and build pass.
+- Visual wording checks are part of the playtest.
+
+---
+
+## BUG-018: localStorage exceptions could break autosave or recovery
+
+- **Status:** fixed
+- **Severity:** medium (save reliability)
+- **Found:** 2026-11-07, robustness review.
+- **Fixed:** 2026-11-07
+- **Location:** `localStorage` calls in [src/App.tsx](src/App.tsx) and [src/ErrorBoundary.tsx](src/ErrorBoundary.tsx)
+
+**Description**
+
+`localStorage.getItem`/`setItem`/`removeItem` can throw in private browsing, when storage is disabled, or when the quota is exceeded. The autosave callback and the ErrorBoundary’s clear-save action did not catch those errors, so a storage failure could crash the loop or the recovery path.
+
+**Fix applied**
+
+- Added a `storage` wrapper with try/catch for get/set/remove.
+- Failed writes set a non-blocking warning in Settings: automatic saving is unavailable; export manually.
+- Loads fall back to defaults when storage cannot be read.
+- The ErrorBoundary clear-save action is wrapped in try/catch and still reloads.
+
+**Verification**
+
+- Lint/test/build pass.
+- A private-browsing/storage-disabled check is part of the playtest.
+
+---
+
+## BUG-019: Modals could overflow; icon-only buttons lacked labels
+
+- **Status:** fixed
+- **Severity:** medium (mobile/accessibility)
+- **Found:** 2026-11-07, UX review.
+- **Fixed:** 2026-11-07
+- **Location:** [src/App.tsx](src/App.tsx) Settings, prestige, import and offline modals; top bar
+
+**Description**
+
+The Settings modal had no max-height or internal scrolling, so Save Data and Danger Zone could be unreachable on a short phone. Several icon-only controls (settings gear, close buttons) had no accessible name, and dialogs lacked dialog semantics.
+
+**Fix applied**
+
+- Modal containers use `max-h-[90vh]` with `overflow-y-auto`; Settings uses a flex column with a scrollable body.
+- Modal roots use `role="dialog"`, `aria-modal="true"` and an `aria-label`.
+- Icon-only buttons have `aria-label`/`title`.
+- The top HQ button has a descriptive label including cost or TD-blocked state.
+
+**Verification**
+
+- Lint/test/build pass.
+- A 360×640 viewport and keyboard tab-order check is part of the playtest.
+
+---
+
+## BUG-020: Prestige confirmation used contradictory “lifetime progress this run” wording
+
+- **Status:** fixed
+- **Severity:** low (copy clarity)
+- **Found:** 2026-11-08, during the scripted browser walkthrough of the prestige flow.
+- **Fixed:** 2026-11-08
+- **Location:** [src/App.tsx](src/App.tsx) prestige confirmation modal
+
+**Description**
+
+The confirmation said “It is worth 1.00B LOC of lifetime progress this run.” `totalLoc` is LOC earned during the current run, while “lifetime” means all runs combined. The sentence contradicted itself and could imply the payout used lifetime LOC.
+
+**Fix applied**
+
+The modal now reads “The offer is based on the 1.00B LOC you earned this run.”
+
+**Verification**
+
+The browser walkthrough checks that the new wording appears and the contradictory phrase is gone. Lint, unit tests and the production build pass.

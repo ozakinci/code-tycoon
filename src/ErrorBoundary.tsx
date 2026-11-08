@@ -13,32 +13,27 @@ interface State {
 // render-time throw white-screens the app with no recovery path, since the
 // in-app Hard Reset button lives inside Settings, which never gets to render.
 export class ErrorBoundary extends Component<Props, State> {
-  // Declared explicitly: this project has no @types/react installed (see
-  // TICKETS.md BUG-009), so TS can't infer `props`/`state` from the generic
-  // Component<Props, State> base — it resolves to an untyped `any`.
-  props: Readonly<Props>;
-  state: State = { hasError: false };
-
-  constructor(props: Props) {
-    super(props);
-    this.props = props;
-  }
+  override state: State = { hasError: false };
 
   static getDerivedStateFromError(): State {
     return { hasError: true };
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo) {
+  override componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Code Tycoon crashed:', error, info);
   }
 
   private handleClearSave = () => {
-    localStorage.removeItem('codeTycoonEncryptedSave');
-    localStorage.removeItem('codeTycoonSave');
+    try {
+      localStorage.removeItem('codeTycoonEncryptedSave');
+      localStorage.removeItem('codeTycoonSave');
+    } catch (e) {
+      console.warn('Could not clear the save from localStorage', e);
+    }
     window.location.reload();
   };
 
-  render() {
+  override render() {
     if (!this.state.hasError) {
       return this.props.children;
     }

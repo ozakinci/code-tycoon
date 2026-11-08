@@ -54,6 +54,7 @@ interface PrestigeUpgrade {
 }
 
 interface GameState {
+  version: number;
   loc: number;
   totalLoc: number;
   lifetimeLoc: number;
@@ -65,6 +66,8 @@ interface GameState {
   prestigeCount: number;
   lastSaved: number;
   technicalDebt: number;
+  // Active temporary outages: building id -> timestamp when service returns.
+  outages: Record<string, number>;
 }
 
 type BuyAmount = 1 | 10 | 50 | 100 | 'next' | 'max';
@@ -111,19 +114,19 @@ const UPGRADES: Upgrade[] = [
   { id: 'brand_keyboard', 
     name: (lvl) => ["LogiMace Keyboards", "Lazer Chroma", "Berry MX Pro", "PirateShip K1000"][lvl] || "Maxed Brand",
     baseCost: 50000, growthFactor: 10, maxLevel: (state) => Math.min(4, state.stage), 
-    description: (lvl) => `Upgrade all keyboards. Each keyboard now gives +${(lvl + 2) * 50}% production.`, icon: Keyboard, reqStage: 1 },
+    description: (lvl) => `Each equipped keyboard gives +${(lvl + 1) * 50}% base production.`, icon: Keyboard, reqStage: 1 },
   { id: 'brand_coffee', 
     name: (lvl) => ["DipIn Donuts Coffee", "MoonBucks Roastery", "YesPresso Pods", "Copy Luwak Beans"][lvl] || "Maxed Brand",
     baseCost: 150000, growthFactor: 10, maxLevel: (state) => Math.min(4, state.stage), 
-    description: (lvl) => `Upgrade all coffee. Each machine now gives +${(lvl + 2) * 100}% production.`, icon: Coffee, reqStage: 1 },
+    description: (lvl) => `Each coffee machine gives +${(lvl + 1) * 100}% base production.`, icon: Coffee, reqStage: 1 },
   { id: 'brand_chair', 
     name: (lvl) => ["FXRunner Chairs", "MysteryLab Titan", "RegalChairs Hero", "Human Miller Aeron"][lvl] || "Maxed Brand",
     baseCost: 2500000, growthFactor: 10, maxLevel: (state) => Math.min(4, Math.max(0, state.stage - 1)), 
-    description: (lvl) => `Upgrade all chairs. Each chair now gives +${(lvl + 2) * 200}% production.`, icon: Trophy, reqStage: 2 },
+    description: (lvl) => `Each ergonomic chair gives +${(lvl + 1) * 200}% base production.`, icon: Trophy, reqStage: 2 },
 
   // Other repeatables
-  { id: 'code_reviews', name: 'Code Reviews', baseCost: 2500, growthFactor: 2.0, description: (lvl) => `All building base production +${(lvl + 1) * 10}%.`, icon: GitBranch, reqStage: 0 },
-  { id: 'stock_options', name: 'Stock Options', baseCost: 25000000, growthFactor: 10, maxLevel: 5, description: (lvl) => `Global production x1.5 (Level ${lvl}/5). Keep talent happy.`, icon: Landmark, reqStage: 2 },
+  { id: 'code_reviews', name: 'Code Reviews', baseCost: 2500, growthFactor: 2.0, description: (lvl) => `Adds +${lvl * 10}% to each building's multiplier (additive after milestones).`, icon: GitBranch, reqStage: 0 },
+  { id: 'stock_options', name: 'Stock Options', baseCost: 25000000, growthFactor: 10, maxLevel: 5, description: (lvl) => `Global production x${Math.pow(1.5, lvl).toFixed(2)} (Level ${lvl}/5). Keep talent happy.`, icon: Landmark, reqStage: 2 },
   
   // One-time
   { id: 'stackoverflow', name: 'StackOverflow Premium', baseCost: 500, growthFactor: 1, maxLevel: 1, description: () => `Clicking is 5x as effective.`, icon: Zap, reqStage: 0 },
@@ -147,7 +150,7 @@ const UPGRADES: Upgrade[] = [
 // the suffix list fall back to scientific notation instead.
 const NUMBER_SUFFIXES = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc', 'UDc', 'DDc', 'TDc', 'QaDc', 'QiDc', 'SxDc', 'SpDc', 'OcDc', 'NoDc', 'Vg'];
 
-const formatNumber = (num: number) => {
+export const formatNumber = (num: number): string => {
   if (!Number.isFinite(num)) return 'Infinity';
   if (num < 0) return '-' + formatNumber(-num);
   if (num < 1000) return Math.floor(num).toLocaleString('en-US');
@@ -164,12 +167,12 @@ const formatNumber = (num: number) => {
 };
 
 const PRESTIGE_UPGRADES: PrestigeUpgrade[] = [
-  { id: 'founder_network', name: "Founder's Network", baseCost: 1, growthFactor: 1.5, description: (lvl) => `Base Click Power +${(lvl + 1) * 10}.`, icon: Users },
-  { id: 'angel_investor', name: "Angel Investor", baseCost: 2, growthFactor: 2.0, description: (lvl) => `Start runs with ${formatNumber((lvl + 1) * 50000)} LOC.`, icon: Landmark },
-  { id: 'remote_work', name: "Remote Work Policy", baseCost: 3, growthFactor: 1.7, maxLevel: 10, description: (lvl) => `+${(lvl + 1) * 30} min to offline cap thresholds.`, icon: Home },
-  { id: 'brand_recognition', name: "Brand Recognition", baseCost: 5, growthFactor: 1.8, maxLevel: 20, description: (lvl) => `Reduces all building costs by ${(lvl + 1) * 2}%.`, icon: Trophy },
-  { id: 'synergy', name: "Corporate Synergy", baseCost: 10, growthFactor: 3.0, description: (lvl) => `Global Production +${(lvl + 1) * 20}%.`, icon: Building2 },
-  { id: '10x_culture', name: "10x Culture", baseCost: 25, growthFactor: 5.0, description: (lvl) => `Clicking is ${Math.pow(2, lvl + 1)}x as effective.`, icon: Zap },
+  { id: 'founder_network', name: "Founder's Network", baseCost: 1, growthFactor: 1.5, description: (lvl) => `Base Click Power +${lvl * 10}.`, icon: Users },
+  { id: 'angel_investor', name: "Angel Investor", baseCost: 2, growthFactor: 2.0, description: (lvl) => `Start runs with ${formatNumber(lvl * 50000)} LOC.`, icon: Landmark },
+  { id: 'remote_work', name: "Remote Work Policy", baseCost: 3, growthFactor: 1.7, maxLevel: 10, description: (lvl) => `+${lvl * 30} min to offline cap thresholds.`, icon: Home },
+  { id: 'brand_recognition', name: "Brand Recognition", baseCost: 5, growthFactor: 1.8, maxLevel: 20, description: (lvl) => `Reduces all building costs by ${lvl * 2}%.`, icon: Trophy },
+  { id: 'synergy', name: "Corporate Synergy", baseCost: 10, growthFactor: 3.0, description: (lvl) => `Adds +${(lvl * 0.20).toFixed(2)} to the global production multiplier (additive).`, icon: Building2 },
+  { id: '10x_culture', name: "10x Culture", baseCost: 25, growthFactor: 5.0, description: (lvl) => `Clicking is ${Math.pow(2, lvl)}x as effective.`, icon: Zap },
 ];
 
 // Technical Debt only affects gameplay up to the last penalty tier (-60% at
@@ -178,7 +181,26 @@ const PRESTIGE_UPGRADES: PrestigeUpgrade[] = [
 // saves. Cap the state at the last tier.
 const TD_MAX = 200;
 
-const DEFAULT_STATE: GameState = {
+const SAVE_VERSION = 1;
+
+// High Technical Debt no longer deletes buildings. It causes a temporary
+// outage instead: one building type stops producing for 30 seconds, then
+// recovers on its own. The player can also repair it immediately.
+const OUTAGE_DURATION_MS = 30_000;
+const OUTAGE_CHANCE_PER_SEC_LOW = 0.005; // TD 50-99: about one per 3 minutes
+const OUTAGE_CHANCE_PER_SEC_HIGH = 0.02; // TD 100+: about one per 50 seconds
+
+// The live loop must never award minutes of production just because the
+// browser throttled its timer. Background time is handled by the visibility
+// handler using the same capped offline rules.
+const MAX_LIVE_TICK_SECONDS = 1;
+const OFFLINE_REPORT_MIN_SECONDS = 60;
+// A foreground timer can also stall (laptop sleep, tab freeze). Gaps longer
+// than this are treated as offline time instead of being discarded by the cap.
+const LIVE_GAP_OFFLINE_SECONDS = 5;
+
+export const DEFAULT_STATE: GameState = {
+  version: SAVE_VERSION,
   loc: 0,
   totalLoc: 0,
   lifetimeLoc: 0,
@@ -190,6 +212,7 @@ const DEFAULT_STATE: GameState = {
   prestigeCount: 0,
   lastSaved: Date.now(),
   technicalDebt: 0,
+  outages: {},
 };
 
 // A save can come from localStorage or a hand-edited/corrupted imported file,
@@ -198,44 +221,127 @@ const DEFAULT_STATE: GameState = {
 // reach the in-app Hard Reset button, since the crash happens before Settings
 // can even render. Validate and clamp every field instead, falling back to
 // the default for anything malformed.
-const sanitizeGameState = (raw: unknown): GameState => {
-  const parsed = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {};
+//
+// The old sanitizer only checked that the *Owned fields were objects. Their
+// values could still be strings, negative, NaN, Infinity, or unknown ids,
+// which produced NaN production, negative costs, or free purchases. Every
+// nested count is now validated and clamped, and unknown ids are dropped.
+export const sanitizeGameState = (raw: unknown): GameState => {
+  const parsed = (raw && typeof raw === 'object' && !Array.isArray(raw))
+    ? raw as Record<string, unknown>
+    : {};
 
   const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
   const isNonNegativeNumber = (v: unknown): v is number => isFiniteNumber(v) && v >= 0;
-  const isRecord = (v: unknown): v is Record<string, number> =>
+  const isPlainObject = (v: unknown): v is Record<string, unknown> =>
     !!v && typeof v === 'object' && !Array.isArray(v);
 
   const stage = isFiniteNumber(parsed.stage)
     ? Math.min(STAGES.length - 1, Math.max(0, Math.floor(parsed.stage)))
     : DEFAULT_STATE.stage;
 
+  const buildingIds = new Set(BUILDINGS.map(b => b.id));
+  const upgradeIds = new Set(UPGRADES.map(u => u.id));
+  const prestigeIds = new Set(PRESTIGE_UPGRADES.map(u => u.id));
+
+  const sanitizeCounts = (
+    value: unknown,
+    allowedIds: Set<string>,
+    getMax: (id: string) => number | undefined,
+    fallbackMax: number,
+  ): Record<string, number> => {
+    if (!isPlainObject(value)) return {};
+    const result: Record<string, number> = {};
+    for (const [id, rawCount] of Object.entries(value)) {
+      if (!allowedIds.has(id) || !isFiniteNumber(rawCount) || rawCount < 0) continue;
+      const integer = Math.floor(rawCount);
+      if (integer <= 0) continue;
+      const max = getMax(id);
+      const capped = Math.min(integer, Math.max(0, Math.floor(max ?? fallbackMax)));
+      if (capped > 0) result[id] = capped;
+    }
+    return result;
+  };
+
+  const buildingsOwned = sanitizeCounts(
+    parsed.buildingsOwned,
+    buildingIds,
+    () => 1_000_000_000,
+    1_000_000_000,
+  );
+
+  // Equipment max levels depend on team size and stage, so validate against
+  // the sanitized state rather than trusting anything else in the save.
+  const upgradeState: GameState = { ...DEFAULT_STATE, buildingsOwned, stage };
+
+  const upgradesOwned = sanitizeCounts(
+    parsed.upgradesOwned,
+    upgradeIds,
+    (id) => {
+      const upgrade = UPGRADES.find(u => u.id === id);
+      if (!upgrade) return 0;
+      return typeof upgrade.maxLevel === 'function'
+        ? upgrade.maxLevel(upgradeState)
+        : upgrade.maxLevel;
+    },
+    1_000_000,
+  );
+
+  const prestigeUpgradesOwned = sanitizeCounts(
+    parsed.prestigeUpgradesOwned,
+    prestigeIds,
+    (id) => PRESTIGE_UPGRADES.find(u => u.id === id)?.maxLevel,
+    1_000_000,
+  );
+
+  // At most one temporary outage is active at a time. Ignore unknown
+  // buildings, expired timestamps, and implausibly distant future times.
+  const now = Date.now();
+  const outages: Record<string, number> = {};
+  if (isPlainObject(parsed.outages)) {
+    for (const [id, rawUntil] of Object.entries(parsed.outages)) {
+      if (!buildingIds.has(id) || !isFiniteNumber(rawUntil)) continue;
+      if ((buildingsOwned[id] || 0) <= 0) continue;
+      const until = Math.min(rawUntil, now + OUTAGE_DURATION_MS);
+      if (until > now) {
+        outages[id] = until;
+        break;
+      }
+    }
+  }
+
   return {
+    version: SAVE_VERSION,
     loc: isNonNegativeNumber(parsed.loc) ? parsed.loc : DEFAULT_STATE.loc,
     totalLoc: isNonNegativeNumber(parsed.totalLoc) ? parsed.totalLoc : DEFAULT_STATE.totalLoc,
     lifetimeLoc: isNonNegativeNumber(parsed.lifetimeLoc) ? parsed.lifetimeLoc : DEFAULT_STATE.lifetimeLoc,
-    buildingsOwned: isRecord(parsed.buildingsOwned) ? parsed.buildingsOwned : DEFAULT_STATE.buildingsOwned,
-    upgradesOwned: isRecord(parsed.upgradesOwned) ? parsed.upgradesOwned : DEFAULT_STATE.upgradesOwned,
+    buildingsOwned,
+    upgradesOwned,
     stage,
     ac: isNonNegativeNumber(parsed.ac) ? parsed.ac : DEFAULT_STATE.ac,
-    prestigeUpgradesOwned: isRecord(parsed.prestigeUpgradesOwned) ? parsed.prestigeUpgradesOwned : DEFAULT_STATE.prestigeUpgradesOwned,
-    prestigeCount: isNonNegativeNumber(parsed.prestigeCount) ? parsed.prestigeCount : DEFAULT_STATE.prestigeCount,
-    lastSaved: isFiniteNumber(parsed.lastSaved) ? parsed.lastSaved : DEFAULT_STATE.lastSaved,
+    prestigeUpgradesOwned,
+    prestigeCount: isNonNegativeNumber(parsed.prestigeCount)
+      ? Math.floor(parsed.prestigeCount)
+      : DEFAULT_STATE.prestigeCount,
+    lastSaved: isFiniteNumber(parsed.lastSaved)
+      ? Math.min(Math.max(0, parsed.lastSaved), now)
+      : DEFAULT_STATE.lastSaved,
     technicalDebt: isNonNegativeNumber(parsed.technicalDebt)
       ? Math.min(TD_MAX, parsed.technicalDebt)
       : DEFAULT_STATE.technicalDebt,
+    outages,
   };
 };
 
 // --- OBFUSCATION ---
-const encodeSave = (data: GameState) => {
+export const encodeSave = (data: GameState) => {
   const json = JSON.stringify(data);
   const b64 = btoa(encodeURIComponent(json));
   // Shift characters by 1 for basic obfuscation to deter casual cheating
   return b64.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 1)).join('');
 };
 
-const decodeSave = (str: string): GameState | null => {
+export const decodeSave = (str: string): GameState | null => {
   try {
     const b64 = str.split('').map(c => String.fromCharCode(c.charCodeAt(0) - 1)).join('');
     return JSON.parse(decodeURIComponent(atob(b64)));
@@ -244,8 +350,37 @@ const decodeSave = (str: string): GameState | null => {
   }
 };
 
+// localStorage can throw (private browsing, disabled storage, quota). A game
+// that cannot autosave should keep running and tell the player, not crash.
+const storage = {
+  get(key: string): string | null {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      console.warn(`Could not read ${key} from localStorage`, e);
+      return null;
+    }
+  },
+  set(key: string, value: string): boolean {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (e) {
+      console.warn(`Could not write ${key} to localStorage`, e);
+      return false;
+    }
+  },
+  remove(key: string): void {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {
+      console.warn(`Could not remove ${key} from localStorage`, e);
+    }
+  },
+};
+
 // --- HELPER FUNCTIONS ---
-const getMilestoneMultiplier = (count: number) => {
+export const getMilestoneMultiplier = (count: number) => {
   let mult = 1;
   if (count >= 10) mult *= 2;
   if (count >= 25) mult *= 2;
@@ -274,6 +409,16 @@ const getTDReductionPerSec = (state: GameState) => {
   const devops = Math.min(20, state.buildingsOwned['devops'] || 0);
   return devops * (0.1 / 60); // 0.1 TD reduced per min per DevOps
 };
+
+const getTDBaseRatePerMin = (state: GameState) => {
+  const totalBuildings = Object.values(state.buildingsOwned).reduce((a, b) => a + b, 0);
+  const totalUpgrades = Math.min(20, Object.values(state.upgradesOwned).reduce((a, b) => a + b, 0));
+  return (totalBuildings * 0.01) + (totalUpgrades * 0.05);
+};
+
+export const getTDNetRatePerMin = (state: GameState) =>
+  getTDBaseRatePerMin(state) * getTDAcquisitionMultiplier(state)
+  - getTDReductionPerSec(state) * 60;
 
 const getTDPenaltyMultiplier = (td: number) => {
   if (td >= 200) return 0.40;
@@ -355,12 +500,17 @@ const getBuildingMultiplier = (state: GameState, buildingId: string, count: numb
   return mult;
 };
 
-const calculateProduction = (state: GameState) => {
+export const isBuildingOutaged = (state: GameState, buildingId: string) =>
+  (state.outages?.[buildingId] || 0) > Date.now();
+
+export const calculateProduction = (state: GameState) => {
   const globalMult = getGlobalMultiplier(state);
   return BUILDINGS.reduce((total, b) => {
     const count = state.buildingsOwned[b.id] || 0;
+    if (count <= 0) return total;
     const bMult = getBuildingMultiplier(state, b.id, count);
-    return total + (b.baseProduction * count * bMult * globalMult);
+    const outageMult = isBuildingOutaged(state, b.id) ? 0 : 1;
+    return total + (b.baseProduction * count * bMult * globalMult * outageMult);
   }, 0);
 };
 
@@ -371,7 +521,7 @@ const REFACTOR_MIN_COST = 100;
 const getRefactorCost = (state: GameState) =>
   Math.max(REFACTOR_MIN_COST, calculateProduction(state) * REFACTOR_COST_SECONDS);
 
-const calculateClickPower = (state: GameState) => {
+export const calculateClickPower = (state: GameState) => {
   let power = 1;
   
   const founderNetworkLvl = state.prestigeUpgradesOwned?.['founder_network'] || 0;
@@ -402,7 +552,7 @@ const getSafePow = (base: number, exponent: number) => {
   return Math.pow(base, Math.min(exponent, maxExponent));
 };
 
-const calculateCost = (baseCost: number, growthFactor: number, owned: number, loc: number, amount: BuyAmount, maxLevel?: number) => {
+export const calculateCost = (baseCost: number, growthFactor: number, owned: number, loc: number, amount: BuyAmount, maxLevel?: number) => {
   const availableLevels = maxLevel !== undefined ? maxLevel - owned : Infinity;
   if (availableLevels <= 0) return { cost: 0, count: 0 };
 
@@ -456,12 +606,53 @@ const getPrestigeUpgradeCost = (state: GameState, upgradeId: string, amount: Buy
   return calculateCost(upgrade.baseCost, upgrade.growthFactor, owned, state.ac, amount, upgrade.maxLevel);
 };
 
-const calculateAcquisitionCapital = (state: GameState) => {
+export const calculateAcquisitionCapital = (state: GameState) => {
   if (state.stage < 2) return 0;
   const currentStage = STAGES[state.stage];
   const buyerMult = currentStage.buyerMultiplier || 1;
   const baseAC = Math.floor(Math.pow(state.totalLoc / 100000, 0.5));
   return baseAC * buyerMult;
+};
+
+export interface OfflineProgressResult {
+  earned: number;
+  reason: string;
+}
+
+// Shared by the initial page load and by returning to a hidden tab. Keeping
+// one implementation guarantees both paths use the same caps.
+export const calculateOfflineProgress = (
+  prodPerSec: number,
+  secondsOffline: number,
+  remoteWorkLvl: number,
+): OfflineProgressResult => {
+  const extraMins = remoteWorkLvl * 30;
+  const cap1 = (30 + extraMins) * 60; // 100%
+  const cap2 = (120 + extraMins) * 60; // 50%
+  const cap3 = (240 + extraMins) * 60; // 20%
+
+  let earned = 0;
+  let reason = 'Your team worked at 100% capacity while you were gone.';
+
+  if (secondsOffline > cap3) {
+    earned += cap1 * prodPerSec;
+    earned += (cap2 - cap1) * prodPerSec * 0.5;
+    earned += (cap3 - cap2) * prodPerSec * 0.2;
+    reason = `Productivity dropped to 0% after ${(240 + extraMins)} minutes because nobody merged the pull requests.`;
+  } else if (secondsOffline > cap2) {
+    earned += cap1 * prodPerSec;
+    earned += (cap2 - cap1) * prodPerSec * 0.5;
+    earned += (secondsOffline - cap2) * prodPerSec * 0.2;
+    reason = `Productivity dropped to 20% after ${(120 + extraMins)} minutes.`;
+  } else if (secondsOffline > cap1) {
+    earned += cap1 * prodPerSec;
+    earned += (secondsOffline - cap1) * prodPerSec * 0.5;
+    reason = `Productivity dropped to 50% after ${(30 + extraMins)} minutes.`;
+  } else {
+    earned += secondsOffline * prodPerSec;
+  }
+
+  return { earned, reason };
 };
 
 const getUpgradeCost = (state: GameState, upgradeId: string, amount: BuyAmount) => {
@@ -475,7 +666,7 @@ const getUpgradeCost = (state: GameState, upgradeId: string, amount: BuyAmount) 
 
 export default function App() {
   const [buyAmount, setBuyAmount] = useState<BuyAmount>(() => {
-    const saved = localStorage.getItem('codeTycoonBuyAmount');
+    const saved = storage.get('codeTycoonBuyAmount');
     if (saved === 'next' || saved === 'max') return saved;
     if (saved) {
       const parsed = parseInt(saved);
@@ -485,25 +676,28 @@ export default function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem('codeTycoonBuyAmount', buyAmount.toString());
+    storage.set('codeTycoonBuyAmount', buyAmount.toString());
   }, [buyAmount]);
 
   const [activeTab, setActiveTab] = useState<'team' | 'upgrades' | 'boardroom'>('team');
   const [showOptions, setShowOptions] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showPrestigeConfirm, setShowPrestigeConfirm] = useState(false);
+  const [pendingImport, setPendingImport] = useState<GameState | null>(null);
+  const [storageWarning, setStorageWarning] = useState(false);
   const [offlineReport, setOfflineReport] = useState<{earned: number; reason: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const offlineProgressAppliedRef = useRef(false);
 
   const [gameState, setGameState] = useState<GameState>(() => {
     // Try loading encrypted save first
-    const encSaved = localStorage.getItem('codeTycoonEncryptedSave');
+    const encSaved = storage.get('codeTycoonEncryptedSave');
     if (encSaved) {
       const parsed = decodeSave(encSaved);
       if (parsed) return sanitizeGameState(parsed);
     }
     // Fallback to old plain JSON save if present
-    const saved = localStorage.getItem('codeTycoonSave');
+    const saved = storage.get('codeTycoonSave');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -521,105 +715,143 @@ export default function App() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      localStorage.setItem('codeTycoonEncryptedSave', encodeSave(gameStateRef.current));
+      if (!storage.set('codeTycoonEncryptedSave', encodeSave(gameStateRef.current))) {
+        setStorageWarning(true);
+      }
     }, 5000);
     return () => clearInterval(interval);
   }, []);
 
   // Offline progress and game loop
   useEffect(() => {
-    // Calculate offline progress. Guarded by a ref (rather than relying on
-    // this effect only running once) because React StrictMode intentionally
-    // double-invokes mount effects in dev, and this block isn't idempotent —
-    // without the guard, a second invocation would award offline LOC twice.
-    const now = Date.now();
-    const timeDiffMs = now - gameState.lastSaved;
-    if (!offlineProgressAppliedRef.current && timeDiffMs > 60000) { // more than 1 minute
-      offlineProgressAppliedRef.current = true;
-       const prodPerSec = calculateProduction(gameState);
-       if (prodPerSec > 0) {
-           const remoteWorkLvl = gameState.prestigeUpgradesOwned?.['remote_work'] || 0;
-           const extraMins = remoteWorkLvl * 30;
-           
-           const cap1 = (30 + extraMins) * 60; // 100%
-           const cap2 = (120 + extraMins) * 60; // 50%
-           const cap3 = (240 + extraMins) * 60; // 20%
-           
-           let earned = 0;
-           let secondsOffline = Math.floor(timeDiffMs / 1000);
-           let reason = "Your team worked at 100% capacity while you were gone.";
-           
-           if (secondsOffline > cap3) {
-               earned += cap1 * prodPerSec;
-               earned += (cap2 - cap1) * prodPerSec * 0.5;
-               earned += (cap3 - cap2) * prodPerSec * 0.2;
-               reason = `Productivity dropped to 0% after ${(240 + extraMins)} minutes because nobody merged the pull requests.`;
-           } else if (secondsOffline > cap2) {
-               earned += cap1 * prodPerSec;
-               earned += (cap2 - cap1) * prodPerSec * 0.5;
-               earned += (secondsOffline - cap2) * prodPerSec * 0.2;
-               reason = `Productivity dropped to 20% after ${(120 + extraMins)} minutes.`;
-           } else if (secondsOffline > cap1) {
-               earned += cap1 * prodPerSec;
-               earned += (secondsOffline - cap1) * prodPerSec * 0.5;
-               reason = `Productivity dropped to 50% after ${(30 + extraMins)} minutes.`;
-           } else {
-               earned += secondsOffline * prodPerSec;
-           }
+    const applyAwayProgress = (secondsAway: number, showReport: boolean) => {
+      const state = gameStateRef.current;
+      const prodPerSec = calculateProduction(state);
+      if (prodPerSec <= 0 || secondsAway <= 0) return;
 
-           if (earned > 0) {
-               setOfflineReport({ earned, reason });
-               setGameState(prev => ({
-                   ...prev,
-                   loc: prev.loc + earned,
-                   totalLoc: prev.totalLoc + earned,
-                   lifetimeLoc: (prev.lifetimeLoc || prev.totalLoc) + earned,
-                   lastSaved: Date.now()
-               }));
-           }
-       }
+      const remoteWorkLvl = state.prestigeUpgradesOwned?.['remote_work'] || 0;
+      const { earned, reason } = calculateOfflineProgress(prodPerSec, secondsAway, remoteWorkLvl);
+      if (earned <= 0) return;
+
+      setGameState(prev => ({
+        ...prev,
+        loc: prev.loc + earned,
+        totalLoc: prev.totalLoc + earned,
+        lifetimeLoc: (prev.lifetimeLoc || prev.totalLoc) + earned,
+        lastSaved: Date.now(),
+      }));
+      if (showReport) setOfflineReport({ earned, reason });
+    };
+
+    // Guarded by a ref because React StrictMode intentionally double-invokes
+    // mount effects in dev, and this block isn't idempotent. The old code only
+    // awarded offline time after 60s; short reloads now get their few seconds
+    // back too, without a modal.
+    if (!offlineProgressAppliedRef.current) {
+      offlineProgressAppliedRef.current = true;
+      const timeDiffMs = Date.now() - gameState.lastSaved;
+      if (timeDiffMs > 5000) {
+        applyAwayProgress(Math.floor(timeDiffMs / 1000), timeDiffMs > OFFLINE_REPORT_MIN_SECONDS * 1000);
+      }
     }
 
-    let lastTime = Date.now();
+    let lastTick = Date.now();
+    // If the app is opened in a background tab, start tracking the hidden
+    // interval immediately so it is awarded when the tab becomes visible.
+    let hiddenAt: number | null = document.hidden ? Date.now() : null;
+
+    // A hidden tab may be throttled to one timer per minute. Treat the hidden
+    // interval as offline time instead of letting a delayed tick award it at
+    // full rate. This makes an open background tab and a closed tab behave
+    // the same way.
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        hiddenAt = Date.now();
+        lastTick = Date.now();
+        return;
+      }
+
+      const awaySince = hiddenAt;
+      hiddenAt = null;
+      lastTick = Date.now();
+      if (awaySince !== null) {
+        const secondsAway = Math.floor((Date.now() - awaySince) / 1000);
+        if (secondsAway >= 5) {
+          applyAwayProgress(secondsAway, secondsAway > OFFLINE_REPORT_MIN_SECONDS);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     const interval = setInterval(() => {
       const currentTime = Date.now();
-      const dt = (currentTime - lastTime) / 1000;
-      lastTime = currentTime;
-      
+      const elapsed = (currentTime - lastTick) / 1000;
+      lastTick = currentTime;
+
+      if (document.hidden) return;
+
+      if (elapsed > LIVE_GAP_OFFLINE_SECONDS) {
+        applyAwayProgress(Math.floor(elapsed), elapsed > OFFLINE_REPORT_MIN_SECONDS);
+        return;
+      }
+
+      const dt = Math.min(Math.max(elapsed, 0), MAX_LIVE_TICK_SECONDS);
+
       setGameState(prev => {
         const prod = calculateProduction(prev);
-        
+
         const buildingCounts: number[] = Object.values(prev.buildingsOwned);
         const upgradeCounts: number[] = Object.values(prev.upgradesOwned);
         const totalBuildings = buildingCounts.reduce((a, b) => a + b, 0);
         const totalUpgrades = Math.min(20, upgradeCounts.reduce((a, b) => a + b, 0));
-        
+
         // 1 TD/min per 100 buildings (0.01 per building)
         // 0.5 TD/min per 10 upgrades (0.05 per upgrade), capped at 20 upgrades (max +1.0 TD/min)
         const baseTDRatePerMin = (totalBuildings * 0.01) + (totalUpgrades * 0.05);
         const passiveTDRatePerSec = baseTDRatePerMin / 60;
-        
+
         const tdAccumulation = passiveTDRatePerSec * getTDAcquisitionMultiplier(prev) * dt;
         const tdReduction = getTDReductionPerSec(prev) * dt;
-        
+
         let newTD = (prev.technicalDebt || 0) + tdAccumulation - tdReduction;
         if (newTD < 0) newTD = 0;
         if (newTD > TD_MAX) newTD = TD_MAX;
-        
-        let newBuildings = prev.buildingsOwned;
-        if (newTD >= 50) {
-            const shutdownChancePerSec = newTD >= 100 ? 0.05 : 0.01;
-            if (Math.random() < shutdownChancePerSec * dt) {
-                const available = Object.keys(newBuildings).filter(k => newBuildings[k] > 0);
-                if (available.length > 0) {
-                    const target = available[Math.floor(Math.random() * available.length)];
-                    newBuildings = { ...newBuildings, [target]: newBuildings[target] - 1 };
-                }
-            }
+
+        // Outages are temporary. Never delete a building: high TD takes one
+        // building type offline for 30 seconds, then it recovers on its own.
+        let newOutages = prev.outages || {};
+        const activeOutages = Object.entries(newOutages).filter(([, until]) => until > currentTime);
+        if (activeOutages.length !== Object.keys(newOutages).length) {
+          newOutages = Object.fromEntries(activeOutages);
         }
-        
-        if (prod === 0 && tdAccumulation === 0 && tdReduction === 0) return { ...prev, lastSaved: currentTime, technicalDebt: newTD, buildingsOwned: newBuildings };
-        
+
+        if (Object.keys(newOutages).length === 0 && newTD >= 50) {
+          const outageChancePerSec = newTD >= 100 ? OUTAGE_CHANCE_PER_SEC_HIGH : OUTAGE_CHANCE_PER_SEC_LOW;
+          if (Math.random() < outageChancePerSec * dt) {
+            const owned = BUILDINGS.filter(b => (prev.buildingsOwned[b.id] || 0) > 0);
+            if (owned.length > 0) {
+              // Weight by owned count so a single rare Quantum Computer is
+              // much less likely to be picked than one of many Buddies.
+              const totalWeight = owned.reduce((sum, b) => sum + (prev.buildingsOwned[b.id] || 0), 0);
+              let roll = Math.random() * totalWeight;
+              let target = owned[owned.length - 1];
+              for (const building of owned) {
+                roll -= prev.buildingsOwned[building.id] || 0;
+                if (roll <= 0) {
+                  target = building;
+                  break;
+                }
+              }
+              newOutages = { [target.id]: currentTime + OUTAGE_DURATION_MS };
+            }
+          }
+        }
+
+        if (prod === 0 && tdAccumulation === 0 && tdReduction === 0 && Object.keys(newOutages).length === 0) {
+          return { ...prev, lastSaved: currentTime, technicalDebt: newTD, outages: newOutages };
+        }
+
         return {
           ...prev,
           loc: prev.loc + prod * dt,
@@ -627,12 +859,15 @@ export default function App() {
           lifetimeLoc: (prev.lifetimeLoc || prev.totalLoc) + prod * dt,
           lastSaved: currentTime,
           technicalDebt: newTD,
-          buildingsOwned: newBuildings
+          outages: newOutages,
         };
       });
     }, 100);
-    
-    return () => clearInterval(interval);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const handleWriteCode = useCallback(() => {
@@ -712,22 +947,33 @@ export default function App() {
   };
 
   const handlePrestige = () => {
-    const acGained = calculateAcquisitionCapital(gameState);
-    if (acGained <= 0) return;
-    
+    // Compute the payout inside the updater. A fast double-click would
+    // otherwise calculate the same payout twice from the render snapshot;
+    // the second invocation now sees stage 0 and becomes a no-op.
     setGameState(prev => {
+      const acGained = calculateAcquisitionCapital(prev);
+      if (acGained <= 0) return prev;
+
       const angelLvl = prev.prestigeUpgradesOwned?.['angel_investor'] || 0;
-      const startLoc = angelLvl * 50000;
       return {
         ...DEFAULT_STATE,
-        loc: startLoc,
+        loc: angelLvl * 50000,
         lifetimeLoc: prev.lifetimeLoc || prev.totalLoc, // keep lifetime
         ac: (prev.ac || 0) + acGained,
         prestigeCount: (prev.prestigeCount || 0) + 1,
-        prestigeUpgradesOwned: prev.prestigeUpgradesOwned || {}
+        prestigeUpgradesOwned: prev.prestigeUpgradesOwned || {},
+        lastSaved: Date.now(),
       };
     });
     setActiveTab('team');
+    setShowPrestigeConfirm(false);
+  };
+
+  const repairOutage = () => {
+    setGameState(prev => {
+      if (!prev.outages || Object.keys(prev.outages).length === 0) return prev;
+      return { ...prev, outages: {} };
+    });
   };
 
   const upgradeStage = () => {
@@ -747,10 +993,12 @@ export default function App() {
 
   // --- SAVE/LOAD HANDLERS ---
   const confirmWipe = () => {
-    localStorage.removeItem('codeTycoonEncryptedSave');
-    localStorage.removeItem('codeTycoonSave');
+    storage.remove('codeTycoonEncryptedSave');
+    storage.remove('codeTycoonSave');
     setGameState(DEFAULT_STATE);
     setShowResetConfirm(false);
+    setShowPrestigeConfirm(false);
+    setPendingImport(null);
     setShowOptions(false);
   };
 
@@ -773,7 +1021,9 @@ export default function App() {
       const result = e.target?.result as string;
       const parsed = decodeSave(result);
       if (parsed) {
-        setGameState(sanitizeGameState(parsed));
+        // Preview before replacing the current company. Importing is a
+        // progress-loss action just like prestiging, so it gets a confirm.
+        setPendingImport(sanitizeGameState(parsed));
         setShowOptions(false);
       } else {
         alert("Invalid save file!");
@@ -781,6 +1031,13 @@ export default function App() {
     };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const confirmImport = () => {
+    if (!pendingImport) return;
+    setGameState({ ...pendingImport, lastSaved: Date.now() });
+    setPendingImport(null);
+    setActiveTab('team');
   };
 
   const currentStage = STAGES[gameState.stage];
@@ -798,10 +1055,30 @@ export default function App() {
     return gameState.loc >= cost && count > 0;
   });
   
-  const canAffordAnyUpgrade = availableUpgrades.some(u => {
-    const owned = gameState.upgradesOwned[u.id] || 0;
-    const max = typeof u.maxLevel === 'function' ? u.maxLevel(gameState) : u.maxLevel;
-    if (max !== undefined && owned >= max) return false;
+  const getUpgradeMax = (upgrade: Upgrade) =>
+    typeof upgrade.maxLevel === 'function' ? upgrade.maxLevel(gameState) : upgrade.maxLevel;
+
+  // A dynamic max of 0 means "no hires yet", not "maxed". Locked equipment
+  // stays visible with a clear requirement instead of appearing exhausted.
+  const isUpgradeLocked = (upgrade: Upgrade) => {
+    const max = getUpgradeMax(upgrade);
+    return max !== undefined && max <= 0;
+  };
+
+  const isUpgradeMaxed = (upgrade: Upgrade) => {
+    const max = getUpgradeMax(upgrade);
+    const level = gameState.upgradesOwned[upgrade.id] || 0;
+    return max !== undefined && max > 0 && level >= max;
+  };
+
+  const repeatableUpgrades = availableUpgrades.filter(u => u.maxLevel !== 1 && !isUpgradeMaxed(u));
+  const oneTimeUpgrades = availableUpgrades.filter(u =>
+    u.maxLevel === 1 && (gameState.upgradesOwned[u.id] || 0) < 1,
+  );
+  const exhaustedUpgrades = availableUpgrades.filter(isUpgradeMaxed);
+
+  const canAffordAnyUpgrade = [...repeatableUpgrades, ...oneTimeUpgrades].some(u => {
+    if (isUpgradeLocked(u)) return false;
     const { cost, count } = getUpgradeCost(gameState, u.id, buyAmount);
     return gameState.loc >= cost && count > 0;
   });
@@ -812,6 +1089,30 @@ export default function App() {
     const { cost, count } = getPrestigeUpgradeCost(gameState, u.id, buyAmount);
     return gameState.ac >= cost && count > 0;
   });
+
+  const td = gameState.technicalDebt || 0;
+  const tdNetPerMin = getTDNetRatePerMin(gameState);
+  const tdThresholds = [0, 10, 25, 50, 100, 200];
+  const tdNext = tdThresholds.find(t => t > td);
+  const tdPrevious = [...tdThresholds].reverse().find(t => t <= td) ?? 0;
+  const tdProgress = tdNext
+    ? Math.min(100, Math.max(0, ((td - tdPrevious) / (tdNext - tdPrevious)) * 100))
+    : 100;
+
+  const activeOutage = Object.entries(gameState.outages || {})
+    .find(([, until]) => until > Date.now());
+  const activeOutageBuilding = activeOutage
+    ? BUILDINGS.find(b => b.id === activeOutage[0])
+    : undefined;
+  const activeOutageSeconds = activeOutage
+    ? Math.max(0, Math.ceil((activeOutage[1] - Date.now()) / 1000))
+    : 0;
+
+  const totalHires = getTotalHires(gameState);
+  const humanMultiplier = getHumanMultiplier(gameState);
+  const equippedKeyboards = Math.min(gameState.upgradesOwned['eq_keyboard'] || 0, totalHires);
+  const equippedCoffee = Math.min(gameState.upgradesOwned['eq_coffee'] || 0, totalHires);
+  const equippedChairs = Math.min(gameState.upgradesOwned['eq_chair'] || 0, totalHires);
 
   const AMOUNTS: BuyAmount[] = [1, 10, 50, 100, 'next', 'max'];
 
@@ -832,16 +1133,21 @@ export default function App() {
           </div>
 
           <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-zinc-100 tracking-tight hidden md:block">
-            Code Tycoon v0.0.6
+            Code Tycoon v0.0.7
           </div>
 
           <div className="flex items-center gap-3 flex-1 justify-end">
             {nextStage ? (
               <button
                 onClick={upgradeStage}
-                disabled={gameState.loc < nextStage.cost || (gameState.technicalDebt || 0) >= 200}
+                disabled={gameState.loc < nextStage.cost || td >= 200}
+                aria-label={
+                  td >= 200
+                    ? 'HQ upgrade blocked by Technical Debt'
+                    : `Upgrade HQ to ${nextStage.name} for ${formatNumber(nextStage.cost)} LOC`
+                }
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all ${
-                  gameState.loc >= nextStage.cost && (gameState.technicalDebt || 0) < 200
+                  gameState.loc >= nextStage.cost && td < 200
                     ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-[0_0_15px_rgba(79,70,229,0.3)] hover:shadow-[0_0_25px_rgba(79,70,229,0.5)] cursor-pointer'
                     : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'
                 }`}
@@ -850,7 +1156,7 @@ export default function App() {
                 <div className="text-left hidden sm:block">
                   <div className="text-xs">Next: {nextStage.name}</div>
                   <div className="text-[10px] font-mono font-normal opacity-80">
-                    {(gameState.technicalDebt || 0) >= 200 ? 'BLOCKED BY TD' : formatNumber(nextStage.cost) + ' LOC'}
+                    {td >= 200 ? 'BLOCKED BY TD' : formatNumber(nextStage.cost) + ' LOC'}
                   </div>
                 </div>
               </button>
@@ -862,6 +1168,8 @@ export default function App() {
             
             <button 
               onClick={() => { setShowOptions(true); setShowResetConfirm(false); }}
+              aria-label="Open settings"
+              title="Settings"
               className="p-3 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-300 transition-colors"
             >
               <Settings size={20} />
@@ -889,7 +1197,7 @@ export default function App() {
               {currentProd > 0 && <div className="text-emerald-500/70 text-[10px] mt-1 font-mono">(Base + 1% of Per Sec)</div>}
             </div>
             <div className="bg-zinc-950/50 rounded-xl p-4 border border-zinc-800/30 text-center flex flex-col justify-center">
-              <div className="text-zinc-400 text-[10px] uppercase tracking-wider mb-1">Total LOC Written</div>
+              <div className="text-zinc-400 text-[10px] uppercase tracking-wider mb-1">LOC This Run</div>
               <div className="text-xl font-mono text-zinc-500">{formatNumber(gameState.totalLoc)}</div>
             </div>
           </div>
@@ -897,43 +1205,62 @@ export default function App() {
           <div className="bg-zinc-950/50 rounded-xl p-4 border border-red-900/30 flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
             <div className="flex items-center gap-3 w-full sm:w-auto">
               <div className={`p-2 rounded-lg shrink-0 ${
-                (gameState.technicalDebt || 0) >= 50 ? 'bg-red-950/50 text-red-500' :
-                (gameState.technicalDebt || 0) >= 10 ? 'bg-amber-950/50 text-amber-500' :
+                td >= 50 ? 'bg-red-950/50 text-red-500' :
+                td >= 10 ? 'bg-amber-950/50 text-amber-500' :
                 'bg-zinc-900/50 text-zinc-500'
               }`}>
                 <AlertTriangle size={24} />
               </div>
               <div className="flex-1">
-                <h3 className="font-bold text-zinc-200 text-sm md:text-base">Technical Debt: <span className="font-mono">{formatNumber(gameState.technicalDebt || 0)}</span></h3>
+                <h3 className="font-bold text-zinc-200 text-sm md:text-base">Technical Debt: <span className="font-mono">{formatNumber(td)}</span></h3>
                 <p className={`text-xs md:text-sm ${
-                  (gameState.technicalDebt || 0) >= 200 ? 'text-red-400 font-bold' :
-                  (gameState.technicalDebt || 0) >= 50 ? 'text-red-400' :
-                  (gameState.technicalDebt || 0) >= 10 ? 'text-amber-400' :
+                  td >= 200 ? 'text-red-400 font-bold' :
+                  td >= 50 ? 'text-red-400' :
+                  td >= 10 ? 'text-amber-400' :
                   'text-zinc-500'
                 }`}>
-                  {(gameState.technicalDebt || 0) >= 200 ? 'Severe: -60% Prod, HQ progression blocked!' :
-                   (gameState.technicalDebt || 0) >= 100 ? 'High: -40% Prod, frequent outages.' :
-                   (gameState.technicalDebt || 0) >= 50 ? 'Medium: -20% Prod, occasional outages.' :
-                   (gameState.technicalDebt || 0) >= 25 ? 'Low: -10% Prod.' :
-                   (gameState.technicalDebt || 0) >= 10 ? 'Minor: -5% Prod.' :
+                  {td >= 200 ? 'Severe: -60% Prod, HQ progression blocked!' :
+                   td >= 100 ? 'High: -40% Prod, temporary outages possible.' :
+                   td >= 50 ? 'Medium: -20% Prod, occasional temporary outages.' :
+                   td >= 25 ? 'Low: -10% Prod.' :
+                   td >= 10 ? 'Minor: -5% Prod.' :
                    'Healthy: No penalties.'}
                 </p>
+                <div className="text-[10px] font-mono text-zinc-500 mt-1">
+                  Net {tdNetPerMin >= 0 ? '+' : ''}{tdNetPerMin.toFixed(2)} TD/min
+                  {tdNext ? ` · Next penalty at ${tdNext}` : ' · Maximum penalty'}
+                </div>
+                <div className="mt-2 h-1.5 w-full max-w-xs bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all ${td >= 50 ? 'bg-red-500' : td >= 10 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                    style={{ width: `${tdProgress}%` }}
+                  />
+                </div>
+                {activeOutageBuilding && activeOutage && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-red-300">
+                    <span className="px-2 py-0.5 rounded bg-red-950/50 border border-red-900/50 font-semibold">
+                      Outage: {activeOutageBuilding.name} offline ({activeOutageSeconds}s)
+                    </span>
+                    <button onClick={repairOutage} className="underline hover:text-white">Fix now</button>
+                  </div>
+                )}
               </div>
             </div>
             <button
               onClick={() => {
-                const cost = getRefactorCost(gameState);
-                if (gameState.loc >= cost) {
-                  setGameState(prev => ({
+                setGameState(prev => {
+                  const cost = getRefactorCost(prev);
+                  if (prev.loc < cost || (prev.technicalDebt || 0) <= 0) return prev;
+                  return {
                     ...prev,
                     loc: prev.loc - cost,
-                    technicalDebt: Math.max(0, (prev.technicalDebt || 0) - 10)
-                  }));
-                }
+                    technicalDebt: Math.max(0, (prev.technicalDebt || 0) - 10),
+                  };
+                });
               }}
-              disabled={gameState.loc < getRefactorCost(gameState) || Math.floor(gameState.technicalDebt || 0) <= 0}
+              disabled={gameState.loc < getRefactorCost(gameState) || Math.floor(td) <= 0}
               className={`w-full sm:w-auto px-4 py-2 rounded-lg font-bold transition-all shrink-0 ${
-                gameState.loc >= getRefactorCost(gameState) && Math.floor(gameState.technicalDebt || 0) > 0
+                gameState.loc >= getRefactorCost(gameState) && Math.floor(td) > 0
                   ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-sm cursor-pointer'
                   : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'
               }`}
@@ -1023,7 +1350,8 @@ export default function App() {
                   
                   const bMult = getBuildingMultiplier(gameState, building.id, owned);
                   const globalMult = getGlobalMultiplier(gameState);
-                  const actualProd = building.baseProduction * bMult * globalMult;
+                  const outaged = isBuildingOutaged(gameState, building.id);
+                  const actualProd = outaged ? 0 : building.baseProduction * bMult * globalMult;
                   
                   return (
                     <button
@@ -1049,8 +1377,17 @@ export default function App() {
                         </div>
                       </div>
                       <div className="flex items-center justify-between w-full mt-2 pt-2 border-t border-zinc-800/50">
-                        <div className="text-[11px] font-mono text-emerald-500/70">
-                          +{formatNumber(actualProd)} <span className="opacity-75">LOC/s</span>
+                        <div className={`text-[11px] font-mono ${outaged ? 'text-red-400' : 'text-emerald-500/70'}`}>
+                          {outaged ? (
+                            'Outage — 0 LOC/s'
+                          ) : (
+                            <>
+                              +{formatNumber(actualProd)} <span className="opacity-75">LOC/s each</span>
+                              {owned > 0 && (
+                                <span className="opacity-60"> · {formatNumber(actualProd * owned)}/s total</span>
+                              )}
+                            </>
+                          )}
                         </div>
                         <div className={`font-mono text-xs px-2 py-1 rounded bg-zinc-950/50 ${canAfford && count > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                           {count > 1 && <span className="opacity-70 text-[10px] mr-1">Buy {count}:</span>}
@@ -1086,35 +1423,46 @@ export default function App() {
                 </div>
               </div>
 
+              {totalHires > 0 && (
+                <div className="mb-6 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 text-[11px] text-zinc-400">
+                  <span className="font-semibold uppercase tracking-wider text-zinc-300">Team equipment</span>
+                  <span>Keyboards <span className="font-mono text-zinc-200">{equippedKeyboards}/{totalHires}</span></span>
+                  <span>Coffee <span className="font-mono text-zinc-200">{equippedCoffee}/{totalHires}</span></span>
+                  <span>Chairs <span className="font-mono text-zinc-200">{equippedChairs}/{totalHires}</span></span>
+                  <span>Human multiplier <span className="font-mono text-emerald-400">x{humanMultiplier.toFixed(2)}</span></span>
+                </div>
+              )}
+
               {/* REGULAR UPGRADES */}
               <div className="mb-6">
                 <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">Repeatable Upgrades</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {availableUpgrades.filter(u => {
-                    const level = gameState.upgradesOwned[u.id] || 0;
-                    const max = typeof u.maxLevel === 'function' ? u.maxLevel(gameState) : u.maxLevel;
-                    return u.maxLevel !== 1 && (max === undefined || level < max);
-                  }).map(upgrade => {
+                  {repeatableUpgrades.map(upgrade => {
                     const level = gameState.upgradesOwned[upgrade.id] || 0;
-                    const max = typeof upgrade.maxLevel === 'function' ? upgrade.maxLevel(gameState) : upgrade.maxLevel;
-                    const isMaxed = max !== undefined && level >= max;
+                    const max = getUpgradeMax(upgrade);
+                    const isLocked = isUpgradeLocked(upgrade);
+                    const isMaxed = isUpgradeMaxed(upgrade);
                     const { cost, count } = getUpgradeCost(gameState, upgrade.id, buyAmount);
                     const canAfford = gameState.loc >= cost;
                     const Icon = upgrade.icon;
-                    const name = upgrade.name;
-                    const desc = typeof upgrade.description === 'function' ? upgrade.description(level) : upgrade.description;
+                    const name = typeof upgrade.name === 'function' ? upgrade.name(level) : upgrade.name;
+                    const desc = upgrade.description(level);
+                    const nextDesc = upgrade.description(level + 1);
+                    const showNext = !isLocked && !isMaxed && nextDesc !== desc;
                     
                     return (
                       <button
                         key={upgrade.id}
                         onClick={() => buyUpgrade(upgrade.id)}
-                        disabled={isMaxed || !canAfford || count === 0}
+                        disabled={isLocked || isMaxed || !canAfford || count === 0}
                         className={`relative p-3 rounded-lg border text-left transition-all ${
-                          isMaxed 
-                            ? 'bg-emerald-950/20 border-emerald-900/30 opacity-50 cursor-not-allowed' 
-                            : canAfford && count > 0
-                              ? 'bg-zinc-900/80 border-zinc-700 hover:border-emerald-500/50 hover:bg-zinc-800 cursor-pointer shadow-sm'
-                              : 'bg-zinc-950/50 border-zinc-800/50 opacity-50 cursor-not-allowed'
+                          isLocked
+                            ? 'bg-zinc-950/50 border-zinc-800/50 opacity-60 cursor-not-allowed'
+                            : isMaxed
+                              ? 'bg-emerald-950/20 border-emerald-900/30 opacity-50 cursor-not-allowed'
+                              : canAfford && count > 0
+                                ? 'bg-zinc-900/80 border-zinc-700 hover:border-emerald-500/50 hover:bg-zinc-800 cursor-pointer shadow-sm'
+                                : 'bg-zinc-950/50 border-zinc-800/50 opacity-50 cursor-not-allowed'
                         }`}
                       >
                         <div className="flex items-start gap-3">
@@ -1130,10 +1478,15 @@ export default function App() {
                                 </span>
                               )}
                             </div>
-                            <p className="text-[11px] text-zinc-400 leading-tight">{desc}</p>
+                            <p className="text-[11px] text-zinc-400 leading-tight">Current: {desc}</p>
+                            {showNext && (
+                              <p className="text-[11px] text-emerald-500/80 leading-tight mt-0.5">Next level: {nextDesc}</p>
+                            )}
                           </div>
                           <div className="text-right shrink-0 self-center">
-                            {!isMaxed ? (
+                            {isLocked ? (
+                              <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold px-2 py-1">Requires a hire</span>
+                            ) : !isMaxed ? (
                               <div className={`font-mono text-xs px-2 py-1 rounded bg-zinc-950/50 ${canAfford && count > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                 {count > 1 && <span className="opacity-70 text-[10px] mr-1">Buy {count}:</span>}
                                 {formatNumber(cost)}
@@ -1146,13 +1499,11 @@ export default function App() {
                       </button>
                     );
                   })}
-                  {availableUpgrades.filter(u => {
-                    const level = gameState.upgradesOwned[u.id] || 0;
-                    const max = typeof u.maxLevel === 'function' ? u.maxLevel(gameState) : u.maxLevel;
-                    return u.maxLevel !== 1 && (max === undefined || level < max);
-                  }).length === 0 && (
+                  {repeatableUpgrades.length === 0 && (
                     <div className="col-span-full p-4 text-center text-zinc-500 border border-zinc-800/50 rounded-xl border-dashed text-sm">
-                      Upgrade your HQ to unlock technologies.
+                      {availableUpgrades.some(u => u.maxLevel !== 1)
+                        ? 'All repeatable upgrades are maxed for this HQ. Upgrade your HQ to unlock more.'
+                        : 'Upgrade your HQ to unlock technologies.'}
                     </div>
                   )}
                 </div>
@@ -1162,17 +1513,14 @@ export default function App() {
               <div className="mb-6">
                 <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">One-Time Tech Upgrades</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {availableUpgrades.filter(u => {
-                    const level = gameState.upgradesOwned[u.id] || 0;
-                    return u.maxLevel === 1 && level < 1;
-                  }).map(upgrade => {
+                  {oneTimeUpgrades.map(upgrade => {
                     const level = gameState.upgradesOwned[upgrade.id] || 0;
                     const isMaxed = level >= 1;
                     const { cost } = getUpgradeCost(gameState, upgrade.id, 1);
                     const canAfford = gameState.loc >= cost;
                     const Icon = upgrade.icon;
-                    const name = upgrade.name;
-                    const desc = typeof upgrade.description === 'function' ? upgrade.description(level) : upgrade.description;
+                    const name = typeof upgrade.name === 'function' ? upgrade.name(level) : upgrade.name;
+                    const desc = upgrade.description(level);
                     
                     return (
                       <button
@@ -1208,36 +1556,27 @@ export default function App() {
                       </button>
                     );
                   })}
-                  {availableUpgrades.filter(u => {
-                    const level = gameState.upgradesOwned[u.id] || 0;
-                    return u.maxLevel === 1 && level < 1;
-                  }).length === 0 && (
+                  {oneTimeUpgrades.length === 0 && (
                     <div className="col-span-full p-4 text-center text-zinc-500 border border-zinc-800/50 rounded-xl border-dashed text-sm">
-                      Upgrade your HQ to unlock technologies.
+                      {availableUpgrades.some(u => u.maxLevel === 1)
+                        ? 'All one-time tech for this HQ is already installed.'
+                        : 'Upgrade your HQ to unlock technologies.'}
                     </div>
                   )}
                 </div>
               </div>
 
               {/* EXHAUSTED UPGRADES */}
-              {availableUpgrades.filter(u => {
-                const level = gameState.upgradesOwned[u.id] || 0;
-                const max = typeof u.maxLevel === 'function' ? u.maxLevel(gameState) : u.maxLevel;
-                return max !== undefined && level >= max;
-              }).length > 0 && (
+              {exhaustedUpgrades.length > 0 && (
                 <div>
                   <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">Exhausted Technologies</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 opacity-60">
-                    {availableUpgrades.filter(u => {
-                      const level = gameState.upgradesOwned[u.id] || 0;
-                      const max = typeof u.maxLevel === 'function' ? u.maxLevel(gameState) : u.maxLevel;
-                      return max !== undefined && level >= max;
-                    }).map(upgrade => {
+                    {exhaustedUpgrades.map(upgrade => {
                       const level = gameState.upgradesOwned[upgrade.id] || 0;
-                      const max = typeof upgrade.maxLevel === 'function' ? upgrade.maxLevel(gameState) : upgrade.maxLevel;
+                      const max = getUpgradeMax(upgrade);
                       const Icon = upgrade.icon;
-                      const name = upgrade.name;
-                      const desc = typeof upgrade.description === 'function' ? upgrade.description(level) : upgrade.description;
+                      const name = typeof upgrade.name === 'function' ? upgrade.name(level) : upgrade.name;
+                      const desc = upgrade.description(level);
                       
                       return (
                         <div
@@ -1257,7 +1596,7 @@ export default function App() {
                                   </span>
                                 )}
                               </div>
-                              <p className="text-[11px] text-zinc-400 leading-tight">{desc}</p>
+                              <p className="text-[11px] text-zinc-400 leading-tight">Current: {desc}</p>
                             </div>
                             <div className="text-right shrink-0 self-center">
                               <span className="text-[10px] uppercase tracking-wider text-emerald-500 font-semibold px-2 py-1">Maxed</span>
@@ -1291,7 +1630,10 @@ export default function App() {
                         Grow your company to <strong className="text-zinc-200">Startup Office</strong> to attract buyers.
                       </p>
                     )}
-                    <p className="text-zinc-500 text-xs">Selling resets your LOC, Buildings, Upgrades, and HQ Stage.</p>
+                    <p className="text-zinc-500 text-xs">
+                      Selling resets your LOC, buildings, upgrades, HQ stage, Technical Debt and outages.
+                      It keeps Founder Perks, AC and lifetime LOC.
+                    </p>
                   </div>
                   
                   <div className="flex flex-col items-center min-w-[200px]">
@@ -1300,7 +1642,7 @@ export default function App() {
                     </div>
                     <div className="text-zinc-500 text-xs uppercase tracking-wider mb-4">Payout</div>
                     <button
-                      onClick={handlePrestige}
+                      onClick={() => setShowPrestigeConfirm(true)}
                       disabled={calculateAcquisitionCapital(gameState) <= 0}
                       className={`px-8 py-3 rounded-xl font-bold transition-all w-full ${
                         calculateAcquisitionCapital(gameState) > 0
@@ -1308,7 +1650,7 @@ export default function App() {
                           : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'
                       }`}
                     >
-                      Accept Acquisition
+                      Review Acquisition Offer
                     </button>
                   </div>
                 </div>
@@ -1350,7 +1692,9 @@ export default function App() {
                     const canAfford = gameState.ac >= cost;
                     const Icon = upgrade.icon;
                     const name = upgrade.name;
-                    const desc = typeof upgrade.description === 'function' ? upgrade.description(level) : upgrade.description;
+                    const desc = upgrade.description(level);
+                    const nextDesc = upgrade.description(level + 1);
+                    const showNext = !isMaxed && nextDesc !== desc;
                     
                     return (
                       <button
@@ -1378,7 +1722,10 @@ export default function App() {
                                 </span>
                               )}
                             </div>
-                            <p className="text-[11px] text-zinc-400 leading-tight">{desc}</p>
+                            <p className="text-[11px] text-zinc-400 leading-tight">Current: {desc}</p>
+                            {showNext && (
+                              <p className="text-[11px] text-emerald-500/80 leading-tight mt-0.5">Next level: {nextDesc}</p>
+                            )}
                           </div>
                           <div className="text-right shrink-0 self-center">
                             {!isMaxed ? (
@@ -1412,7 +1759,7 @@ export default function App() {
                       const level = gameState.prestigeUpgradesOwned?.[upgrade.id] || 0;
                       const Icon = upgrade.icon;
                       const name = upgrade.name;
-                      const desc = typeof upgrade.description === 'function' ? upgrade.description(level) : upgrade.description;
+                      const desc = upgrade.description(level);
                       
                       return (
                         <div
@@ -1430,7 +1777,7 @@ export default function App() {
                                   Lvl {level} / {upgrade.maxLevel}
                                 </span>
                               </div>
-                              <p className="text-[11px] text-zinc-400 leading-tight">{desc}</p>
+                              <p className="text-[11px] text-zinc-400 leading-tight">Current: {desc}</p>
                             </div>
                             <div className="text-right shrink-0 self-center">
                               <span className="text-[10px] uppercase tracking-wider text-emerald-500 font-semibold px-2 py-1">Maxed</span>
@@ -1451,24 +1798,37 @@ export default function App() {
       {/* OPTIONS MODAL */}
       {showOptions && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Settings and stats"
+            className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] flex flex-col overflow-hidden"
+          >
             <div className="flex justify-between items-center p-4 border-b border-zinc-800">
               <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">
                 <Settings size={20} /> Settings & Stats
               </h2>
-              <button onClick={() => { setShowOptions(false); setShowResetConfirm(false); }} className="text-zinc-500 hover:text-zinc-300 transition-colors">
+              <button
+                onClick={() => { setShowOptions(false); setShowResetConfirm(false); }}
+                aria-label="Close settings"
+                className="text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
                 <X size={20} />
               </button>
             </div>
             
-            <div className="p-6 space-y-6">
+            <div className="p-6 space-y-6 overflow-y-auto">
               
               <div className="space-y-3">
                 <h3 className="text-sm uppercase tracking-wider text-zinc-500 font-semibold">Statistics</h3>
                 <div className="bg-zinc-950/50 rounded-xl p-4 border border-zinc-800/30 space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-zinc-400">Total LOC Written (All Time)</span>
+                    <span className="text-zinc-400">Lifetime LOC</span>
                     <span className="font-mono text-zinc-200">{formatNumber(gameState.lifetimeLoc || gameState.totalLoc)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400">LOC This Run</span>
+                    <span className="font-mono text-zinc-200">{formatNumber(gameState.totalLoc)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-400">Total Acquisitions</span>
@@ -1494,6 +1854,11 @@ export default function App() {
 
               <div className="space-y-3">
                 <h3 className="text-sm uppercase tracking-wider text-zinc-500 font-semibold">Save Data</h3>
+                {storageWarning && (
+                  <p className="rounded-lg border border-amber-900/50 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
+                    Automatic saving is unavailable in this browser. Export your save manually so progress is not lost.
+                  </p>
+                )}
                 <button 
                   onClick={exportSave}
                   className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl font-semibold flex items-center justify-center gap-3 transition-colors border border-zinc-700 hover:border-zinc-500"
@@ -1549,15 +1914,114 @@ export default function App() {
         </div>
       )}
 
+      {/* PRESTIGE CONFIRMATION */}
+      {showPrestigeConfirm && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm acquisition"
+            className="bg-zinc-900 border border-emerald-900/50 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto"
+          >
+            <div className="p-6 space-y-4">
+              <h2 className="text-xl font-bold text-zinc-100">Accept the acquisition?</h2>
+              <p className="text-sm text-zinc-400">
+                <strong className="text-zinc-200">{STAGES[gameState.stage].buyerName || 'A buyer'}</strong> will acquire
+                your company for <strong className="text-emerald-400">+{formatNumber(calculateAcquisitionCapital(gameState))} AC</strong>.
+                The offer is based on the {formatNumber(gameState.totalLoc)} LOC you earned this run.
+              </p>
+              <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-4 text-xs space-y-2">
+                <p><span className="font-semibold text-red-300">Resets:</span> LOC, buildings, upgrades, HQ stage, Technical Debt and outages.</p>
+                <p><span className="font-semibold text-emerald-300">Keeps:</span> Founder Perks, AC, lifetime LOC and acquisition count.</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handlePrestige}
+                  className="flex-1 rounded-xl bg-emerald-600 px-4 py-3 font-bold text-white transition-colors hover:bg-emerald-500"
+                >
+                  Confirm Sale
+                </button>
+                <button
+                  onClick={() => setShowPrestigeConfirm(false)}
+                  className="flex-1 rounded-xl bg-zinc-700 px-4 py-3 font-semibold text-white transition-colors hover:bg-zinc-600"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* IMPORT CONFIRMATION */}
+      {pendingImport && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm save import"
+            className="bg-zinc-900 border border-indigo-900/50 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto"
+          >
+            <div className="p-6 space-y-4">
+              <h2 className="text-xl font-bold text-zinc-100">Replace your current company?</h2>
+              <p className="text-sm text-zinc-400">
+                The imported save will overwrite your current progress. Export the current save first if you might want it back.
+              </p>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-xl border border-zinc-800 bg-zinc-950/50 p-3">
+                  <div className="mb-1 font-semibold uppercase tracking-wider text-zinc-500">Current</div>
+                  <div className="text-zinc-300">{STAGES[gameState.stage].name}</div>
+                  <div className="font-mono text-zinc-400">{formatNumber(gameState.loc)} LOC · {formatNumber(gameState.ac)} AC</div>
+                </div>
+                <div className="rounded-xl border border-indigo-900/50 bg-indigo-950/20 p-3">
+                  <div className="mb-1 font-semibold uppercase tracking-wider text-indigo-400">Imported</div>
+                  <div className="text-zinc-200">{STAGES[pendingImport.stage].name}</div>
+                  <div className="font-mono text-zinc-400">{formatNumber(pendingImport.loc)} LOC · {formatNumber(pendingImport.ac)} AC</div>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={confirmImport}
+                  className="rounded-xl bg-indigo-600 px-4 py-3 font-bold text-white transition-colors hover:bg-indigo-500"
+                >
+                  Replace Save
+                </button>
+                <button
+                  onClick={exportSave}
+                  className="rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-3 font-semibold text-zinc-200 transition-colors hover:bg-zinc-700"
+                >
+                  Download Current Save First
+                </button>
+                <button
+                  onClick={() => setPendingImport(null)}
+                  className="rounded-xl bg-zinc-700 px-4 py-3 font-semibold text-white transition-colors hover:bg-zinc-600"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* OFFLINE PROGRESS MODAL */}
       {offlineReport && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-emerald-900/50 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden shadow-emerald-900/20">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Offline progress report"
+            className="bg-zinc-900 border border-emerald-900/50 rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto shadow-emerald-900/20"
+          >
             <div className="flex justify-between items-center p-4 border-b border-zinc-800 bg-zinc-800/50">
               <h2 className="text-lg font-bold text-zinc-100 flex items-center gap-2">
                 <Coffee size={20} className="text-emerald-500" /> Welcome Back
               </h2>
-              <button onClick={() => setOfflineReport(null)} className="text-zinc-500 hover:text-zinc-300 transition-colors">
+              <button
+                onClick={() => setOfflineReport(null)}
+                aria-label="Close welcome back report"
+                className="text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
                 <X size={20} />
               </button>
             </div>
