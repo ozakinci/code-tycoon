@@ -166,6 +166,20 @@ export const formatNumber = (num: number): string => {
   return scaled.toFixed(2) + NUMBER_SUFFIXES[tier];
 };
 
+// Production and click rates can be fractional (0.8 LOC/click at the start or
+// under a Technical Debt penalty). formatNumber floors everything below 1,000,
+// which made early clicks look like they did nothing. Show up to two decimals
+// below 10, whole numbers up to 999, then the usual compact suffixes.
+export const formatRate = (num: number): string => {
+  if (!Number.isFinite(num)) return 'Infinity';
+  if (num < 0) return '-' + formatRate(-num);
+  if (num < 10) {
+    return (Math.round(num * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  }
+  if (num < 1000) return Math.floor(num).toLocaleString('en-US');
+  return formatNumber(num);
+};
+
 const PRESTIGE_UPGRADES: PrestigeUpgrade[] = [
   { id: 'founder_network', name: "Founder's Network", baseCost: 1, growthFactor: 1.5, description: (lvl) => `Base Click Power +${lvl * 10}.`, icon: Users },
   { id: 'angel_investor', name: "Angel Investor", baseCost: 2, growthFactor: 2.0, description: (lvl) => `Start runs with ${formatNumber(lvl * 50000)} LOC.`, icon: Landmark },
@@ -1099,6 +1113,19 @@ export default function App() {
     ? Math.min(100, Math.max(0, ((td - tdPrevious) / (tdNext - tdPrevious)) * 100))
     : 100;
 
+  const tdStatusLabel =
+    td >= 200 ? 'Severe: -60%, HQ blocked' :
+    td >= 100 ? 'High: -40% Prod' :
+    td >= 50 ? 'Medium: -20% Prod' :
+    td >= 25 ? 'Low: -10% Prod' :
+    td >= 10 ? 'Minor: -5% Prod' :
+    'No penalty';
+  const tdStatusClass =
+    td >= 200 ? 'text-red-400 font-semibold' :
+    td >= 50 ? 'text-red-400' :
+    td >= 10 ? 'text-amber-400' :
+    'text-zinc-500';
+
   const activeOutage = Object.entries(gameState.outages || {})
     .find(([, until]) => until > Date.now());
   const activeOutageBuilding = activeOutage
@@ -1133,7 +1160,7 @@ export default function App() {
           </div>
 
           <div className="absolute left-1/2 -translate-x-1/2 font-bold text-xl text-zinc-100 tracking-tight hidden md:block">
-            Code Tycoon v0.0.7
+            Code Tycoon v0.0.8
           </div>
 
           <div className="flex items-center gap-3 flex-1 justify-end">
@@ -1178,105 +1205,101 @@ export default function App() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto p-6 space-y-8 mt-2">
+      <div className="max-w-6xl mx-auto p-6 space-y-5 mt-2">
         
-        {/* COMPACT TOP HERO: STATS & ACTION */}
-        <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-6 shadow-xl backdrop-blur-sm">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-zinc-950/50 rounded-xl p-4 border border-zinc-800/30 text-center flex flex-col justify-center">
-              <div className="text-zinc-400 text-xs uppercase tracking-wider mb-1">Lines of Code</div>
-              <div className="text-3xl font-mono font-bold text-emerald-400">{formatNumber(gameState.loc)}</div>
-            </div>
-            <div className="bg-zinc-950/50 rounded-xl p-4 border border-zinc-800/30 text-center flex flex-col justify-center">
-              <div className="text-zinc-400 text-xs uppercase tracking-wider mb-1">Per Second</div>
-              <div className="text-2xl font-mono text-zinc-200">{formatNumber(currentProd)}</div>
-            </div>
-            <div className="bg-zinc-950/50 rounded-xl p-4 border border-zinc-800/30 text-center flex flex-col justify-center">
-              <div className="text-zinc-400 text-xs uppercase tracking-wider mb-1">Per Click</div>
-              <div className="text-2xl font-mono text-zinc-200">{formatNumber(currentClick)}</div>
-              {currentProd > 0 && <div className="text-emerald-500/70 text-[10px] mt-1 font-mono">(Base + 1% of Per Sec)</div>}
-            </div>
-            <div className="bg-zinc-950/50 rounded-xl p-4 border border-zinc-800/30 text-center flex flex-col justify-center">
-              <div className="text-zinc-400 text-[10px] uppercase tracking-wider mb-1">LOC This Run</div>
-              <div className="text-xl font-mono text-zinc-500">{formatNumber(gameState.totalLoc)}</div>
-            </div>
-          </div>
-
-          <div className="bg-zinc-950/50 rounded-xl p-4 border border-red-900/30 flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
-            <div className="flex items-center gap-3 w-full sm:w-auto">
-              <div className={`p-2 rounded-lg shrink-0 ${
-                td >= 50 ? 'bg-red-950/50 text-red-500' :
-                td >= 10 ? 'bg-amber-950/50 text-amber-500' :
-                'bg-zinc-900/50 text-zinc-500'
-              }`}>
-                <AlertTriangle size={24} />
+        {/* COMPACT TOP CONSOLE: BALANCE, RATES, ACTION, TD */}
+        <div className="bg-zinc-900/50 border border-zinc-800/50 rounded-2xl p-4 md:p-5 shadow-xl backdrop-blur-sm">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-stretch">
+            {/* Left: balance and rates */}
+            <div className="grid grid-cols-2 gap-3 lg:flex lg:min-w-0">
+              <div className="bg-zinc-950/50 rounded-xl p-3 md:p-4 border border-zinc-800/30 text-center flex flex-col justify-center min-w-0 lg:flex-1">
+                <div className="text-zinc-400 text-[10px] md:text-xs uppercase tracking-wider mb-1">Lines of Code</div>
+                <div className="text-2xl md:text-3xl font-mono font-bold text-emerald-400 truncate">{formatNumber(gameState.loc)}</div>
+                <div className="text-[10px] font-mono text-zinc-500 mt-1 truncate">This run: {formatNumber(gameState.totalLoc)}</div>
               </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-zinc-200 text-sm md:text-base">Technical Debt: <span className="font-mono">{formatNumber(td)}</span></h3>
-                <p className={`text-xs md:text-sm ${
-                  td >= 200 ? 'text-red-400 font-bold' :
-                  td >= 50 ? 'text-red-400' :
-                  td >= 10 ? 'text-amber-400' :
-                  'text-zinc-500'
-                }`}>
-                  {td >= 200 ? 'Severe: -60% Prod, HQ progression blocked!' :
-                   td >= 100 ? 'High: -40% Prod, temporary outages possible.' :
-                   td >= 50 ? 'Medium: -20% Prod, occasional temporary outages.' :
-                   td >= 25 ? 'Low: -10% Prod.' :
-                   td >= 10 ? 'Minor: -5% Prod.' :
-                   'Healthy: No penalties.'}
-                </p>
-                <div className="text-[10px] font-mono text-zinc-500 mt-1">
-                  Net {tdNetPerMin >= 0 ? '+' : ''}{tdNetPerMin.toFixed(2)} TD/min
-                  {tdNext ? ` · Next penalty at ${tdNext}` : ' · Maximum penalty'}
+              <div className="bg-zinc-950/50 rounded-xl p-3 md:p-4 border border-zinc-800/30 flex flex-col justify-center min-w-0 lg:flex-1">
+                <div className="text-center">
+                  <div className="text-zinc-400 text-[10px] md:text-xs uppercase tracking-wider">Per Second</div>
+                  <div className="text-lg md:text-xl font-mono text-zinc-200 truncate">{formatRate(currentProd)}</div>
                 </div>
-                <div className="mt-2 h-1.5 w-full max-w-xs bg-zinc-800 rounded-full overflow-hidden">
+                <div className="my-1.5 h-px bg-zinc-800/70" />
+                <div className="text-center">
+                  <div className="text-zinc-400 text-[10px] md:text-xs uppercase tracking-wider">Per Click</div>
+                  <div className="text-lg md:text-xl font-mono text-zinc-200 truncate">{formatRate(currentClick)}</div>
+                  {currentProd > 0 && <div className="text-emerald-500/70 text-[9px] mt-0.5 font-mono">Base + 1% of per sec</div>}
+                </div>
+              </div>
+            </div>
+
+            {/* Center: Write Code */}
+            <button
+              onClick={handleWriteCode}
+              aria-label={`Write Code, +${formatRate(currentClick)} LOC per click`}
+              className="lg:w-64 xl:w-72 shrink-0 min-h-[84px] bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-xl font-bold transition-all active:scale-[0.98] shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] flex flex-col items-center justify-center gap-1 px-4 py-4"
+            >
+              <Terminal size={26} />
+              <span className="text-xl leading-none">Write Code</span>
+              <span className="text-[11px] font-mono font-normal text-emerald-100/90">+{formatRate(currentClick)} LOC</span>
+            </button>
+
+            {/* Right: Technical Debt and Refactor */}
+            <div className="lg:min-w-0 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="bg-zinc-950/50 rounded-xl p-3 md:p-4 border border-red-900/30 flex flex-col justify-center gap-1.5 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`p-1.5 rounded-lg shrink-0 ${
+                    td >= 50 ? 'bg-red-950/50 text-red-500' :
+                    td >= 10 ? 'bg-amber-950/50 text-amber-500' :
+                    'bg-zinc-900/50 text-zinc-500'
+                  }`}>
+                    <AlertTriangle size={18} />
+                  </div>
+                  <span className="font-bold text-sm text-zinc-200 whitespace-nowrap">TD <span className="font-mono">{formatNumber(td)}</span></span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] font-mono text-zinc-500">
+                  <span className={`text-[11px] font-sans ${tdStatusClass}`}>{tdStatusLabel}</span>
+                  <span>Net {tdNetPerMin >= 0 ? '+' : ''}{tdNetPerMin.toFixed(2)} TD/min</span>
+                  <span>{tdNext ? `Next penalty at ${tdNext}` : 'Maximum penalty'}</span>
+                </div>
+                <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
                   <div
                     className={`h-full transition-all ${td >= 50 ? 'bg-red-500' : td >= 10 ? 'bg-amber-500' : 'bg-emerald-500'}`}
                     style={{ width: `${tdProgress}%` }}
                   />
                 </div>
                 {activeOutageBuilding && activeOutage && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-red-300">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-red-300">
                     <span className="px-2 py-0.5 rounded bg-red-950/50 border border-red-900/50 font-semibold">
-                      Outage: {activeOutageBuilding.name} offline ({activeOutageSeconds}s)
+                      {activeOutageBuilding.name} offline ({activeOutageSeconds}s)
                     </span>
                     <button onClick={repairOutage} className="underline hover:text-white">Fix now</button>
                   </div>
                 )}
               </div>
+              <button
+                onClick={() => {
+                  setGameState(prev => {
+                    const cost = getRefactorCost(prev);
+                    if (prev.loc < cost || (prev.technicalDebt || 0) <= 0) return prev;
+                    return {
+                      ...prev,
+                      loc: prev.loc - cost,
+                      technicalDebt: Math.max(0, (prev.technicalDebt || 0) - 10),
+                    };
+                  });
+                }}
+                disabled={gameState.loc < getRefactorCost(gameState) || Math.floor(td) <= 0}
+                className={`min-w-0 rounded-xl border px-3 py-3 font-bold transition-all flex flex-col items-center justify-center gap-1 text-sm ${
+                  gameState.loc >= getRefactorCost(gameState) && Math.floor(td) > 0
+                    ? 'bg-amber-600 hover:bg-amber-500 text-white border-amber-500 shadow-[0_0_15px_rgba(217,119,6,0.2)] cursor-pointer'
+                    : 'bg-zinc-900/50 text-zinc-500 border-zinc-800/50 cursor-not-allowed'
+                }`}
+              >
+                <Wrench size={18} />
+                <span>Refactor</span>
+                <span className="text-[9px] font-mono font-normal">-10 TD · {formatNumber(getRefactorCost(gameState))} LOC</span>
+              </button>
             </div>
-            <button
-              onClick={() => {
-                setGameState(prev => {
-                  const cost = getRefactorCost(prev);
-                  if (prev.loc < cost || (prev.technicalDebt || 0) <= 0) return prev;
-                  return {
-                    ...prev,
-                    loc: prev.loc - cost,
-                    technicalDebt: Math.max(0, (prev.technicalDebt || 0) - 10),
-                  };
-                });
-              }}
-              disabled={gameState.loc < getRefactorCost(gameState) || Math.floor(td) <= 0}
-              className={`w-full sm:w-auto px-4 py-2 rounded-lg font-bold transition-all shrink-0 ${
-                gameState.loc >= getRefactorCost(gameState) && Math.floor(td) > 0
-                  ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-sm cursor-pointer'
-                  : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'
-              }`}
-            >
-              Refactor (-10 TD)
-              <div className="text-[10px] font-mono font-normal">Cost: {formatNumber(getRefactorCost(gameState))} LOC</div>
-            </button>
           </div>
-
-          <button
-            onClick={handleWriteCode}
-            className="w-full py-6 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-xl font-bold text-2xl transition-all active:scale-[0.98] shadow-[0_0_20px_rgba(16,185,129,0.2)] hover:shadow-[0_0_30px_rgba(16,185,129,0.4)] flex items-center justify-center gap-3"
-          >
-            <Terminal size={28} />
-            Write Code
-          </button>
         </div>
 
         {/* TABS & MAIN CONTENT */}

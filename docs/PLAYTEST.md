@@ -1,7 +1,7 @@
 # Code Tycoon — Playtest Guide
 
-**Status:** ready for first v0.0.7 session  
-**Last updated:** 2026-11-07
+**Status:** ready for first v0.0.8 session  
+**Last updated:** 2026-11-08
 
 Companion documents: [GDD.md](GDD.md) · [ROADMAP.md](ROADMAP.md) · [BALANCE.md](BALANCE.md)
 
@@ -99,7 +99,7 @@ Copy this table for each session.
 | Field | Entry |
 |---|---|
 | Date | |
-| Version | v0.0.7 |
+| Version | v0.0.8 |
 | Tester | |
 | Device / browser | |
 | Session length | |
@@ -117,7 +117,7 @@ Copy this table for each session.
 | Quotes worth keeping | |
 | One change to try next | |
 
-**Current log:** no human playtest sessions recorded for v0.0.7 yet. A scripted browser smoke test was run on 2026-11-08 (see section 11); it covers mechanics, persistence, responsive layout and accessibility names, but cannot judge fun, confusion or delight. The first human session should still focus on the new outage flow, the prestige/import confirmations, and tablet readability.
+**Current log:** no human playtest sessions recorded yet. A scripted browser smoke test was run on 2026-11-08 (see section 11); it covers mechanics, persistence, responsive layout and accessibility names, but cannot judge fun, confusion or delight. The first human session should focus on the new outage flow, the prestige/import confirmations, the compact top console, and tablet readability.
 
 ## 7. Bug triage rubric
 
@@ -184,9 +184,16 @@ Let silence do some work. A player who is thinking is not necessarily confused.
 - Only Microsoft Edge/Chromium was tested. Firefox and Safari remain untested.
 - Screenshots were inspected at desktop size and 360×640. No screen reader or real touch device was used.
 
+### Fixed since this smoke test
+
+- Per-click and per-second values below 1,000 no longer display as **0** (v0.0.8, BUG-021). Rates below 10 show up to two decimals; larger values use whole numbers and compact suffixes.
+- The prestige confirmation previously said “lifetime progress this run”. This contradiction was found during the walkthrough and fixed as BUG-020.
+
 ### Observations not fixed
 
-- At TD 50–99 with no click upgrades, per-click power is 0.8 but displays as **0** because values below 1,000 are floored. Clicking still works, but the display implies no effect. Candidate for the readability pass.
 - At 360px wide, the buy-amount row wraps **MAX** onto a second line with a large empty gap. Usable, but visually awkward.
 - No favicon is defined, so browsers request `/favicon.ico` and log a 404. Cosmetic; it belongs with the planned PWA/icon work.
-- The prestige confirmation previously said “lifetime progress this run”. This contradiction was found during the walkthrough and fixed as BUG-020.
+
+### v0.0.8 layout check
+
+The compact top console was verified in headless Edge on 2026-11-08 at 1366×768 and 360×640: the Write Code tile is centered, the Technical Debt info and Refactor cells sit side by side on desktop, TD 60 with an active outage shows the banner and **Fix now** without breaking the row, no horizontal overflow appears at 360px, and the tab bar plus first building row are visible above the fold on desktop. This is a layout smoke check, not a human playtest; the first human session should still judge clarity and touch comfort.

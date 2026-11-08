@@ -166,8 +166,9 @@ The sanitizer is not a migration system. `version` is currently rewritten to 1 o
 
 `App.tsx` contains one screen with:
 
-- sticky top bar: stage, production stats, next HQ, settings;
-- Technical Debt panel: penalty, net rate, next threshold, progress bar, outage banner;
+- sticky top bar: stage, next HQ, settings;
+- compact top console: four equal-width side cells (LOC balance + run total, per-second/per-click output, Technical Debt info, and Refactor) around a centered Write Code action; the TD info cell carries penalty, net rate, next threshold, progress bar and outage banner;
+- on screens below `lg`, the console stacks into balance + action, rates, then Technical Debt (the info and Refactor cells sit side by side from the `sm` breakpoint and stack on phones);
 - three tabs: Team, Upgrades, Boardroom;
 - modals: settings/stats, prestige confirmation, import confirmation, offline report.
 
@@ -191,13 +192,13 @@ npm run lint    # tsc --noEmit, strict
 npm run build   # production build
 ```
 
-The 19 tests cover:
+The 20 tests cover:
 
 - top-level and nested save sanitization, including unknown IDs, strings, negatives, NaN, Infinity, huge values, equipment-over-hire and brand-over-stage clamping;
 - outage sanitization and production exclusion without deletion;
 - save encode/decode round-trip and garbage input;
 - linear, exponential, bulk, max and next cost calculations;
-- compact number formatting and milestone multipliers;
+- compact number formatting, fractional rate formatting and milestone multipliers;
 - prestige payout and buyer multipliers;
 - offline tier math with and without Remote Work;
 - finite defaults.

@@ -2,6 +2,16 @@
 
 Version numbers match the in-game badge. The history was renumbered on 2026-10-29 to the 0.0.x scheme: v1.0.0 became v0.0.1 and v1.1.0 became v0.0.5. Release content is unchanged.
 
+## [v0.0.8] - Compact Console & Readable Rates (2026-11-08)
+### Changed
+- **Compact top console**: the balance, per-second/per-click output, Write Code action and Technical Debt now share one row on desktop. LOC This Run is folded under the balance, the rates share one output cell, Write Code sits dead center, and TD is split into a compact info cell (penalty, net rate, next threshold, progress bar and outage line) plus a separate Refactor action cell. The four side cells share one width, the centered Write Code tile is slightly wider, and the tab bar and building grid start much higher; the first building row is visible without scrolling at 1366×768.
+- Below the `lg` breakpoint the console stacks into three compact rows: balance + Write Code, then the rates, then Technical Debt. It no longer uses four full-width blocks.
+
+### Fixed
+- **Sub-1,000 rates displayed as 0 (BUG-021)**: per-second and per-click values below 1,000 were floored by the shared number formatter, so the starting 0.8 LOC/click showed as “0”. Rates now show up to two decimals below 10, whole numbers up to 999, and the existing compact suffixes above 1,000.
+
+---
+
 ## [v0.0.7] - Trust, Clarity & Safe Saves (2026-11-07)
 ### Fixed
 - **Permanent building loss (BUG-012)**: at high Technical Debt, the game used to delete a random building permanently. Outages are now temporary: one building type stops producing for 30 seconds, recovers automatically, and can be repaired immediately with “Fix now”. Selection is weighted by owned count, only one outage is active at a time, and buildings are never deleted.

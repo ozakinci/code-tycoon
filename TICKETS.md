@@ -526,3 +526,29 @@ The modal now reads “The offer is based on the 1.00B LOC you earned this run.�
 **Verification**
 
 The browser walkthrough checks that the new wording appears and the contradictory phrase is gone. Lint, unit tests and the production build pass.
+
+---
+
+## BUG-021: Rates below 1,000 render as 0
+
+- **Status:** fixed
+- **Severity:** low (display only)
+- **Found:** 2026-11-08, in the v0.0.7 scripted browser smoke test.
+- **Fixed:** 2026-11-08
+- **Location:** [src/App.tsx](src/App.tsx) `formatNumber`, top console per-second/per-click readouts and Write Code tile.
+
+**Description**
+
+`formatNumber` floors every value below 1,000 (`Math.floor(num)`), which is correct for balances and costs but wrong for rates. At TD 50–99 with no click upgrades, click power is 0.8 LOC but rendered as **0**, so early clicking appeared to do nothing. A fresh save's per-second rate had the same problem once production was fractional.
+
+**Fix applied**
+
+- Added `formatRate`, a rate-specific formatter: up to two decimals below 10 (0.8, 0.04), whole numbers from 10 to 999, then the usual compact suffixes at 1,000+.
+- Used it for Per Second, Per Click, the Write Code tile's per-click gain and its accessible label. `formatNumber` is unchanged for LOC balances and costs.
+- Added boundary tests for 0, 0.04, 0.4, 0.8, 9.94, 10.5, 999.9, 1,000 and Infinity.
+
+**Verification**
+
+- `npm test` passes with 20 tests.
+- Headless Edge checks at 1366×768 and 360×640 confirm fractional rates render correctly and the new top console has no horizontal overflow.
+- The v0.0.7 smoke-test observation is marked fixed in [docs/PLAYTEST.md](docs/PLAYTEST.md).

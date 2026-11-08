@@ -1,8 +1,8 @@
 # Code Tycoon — Roadmap
 
 **Status:** planning reference  
-**Last updated:** 2026-11-07  
-**Current release:** v0.0.7
+**Last updated:** 2026-11-08  
+**Current release:** v0.0.8
 
 This roadmap is deliberately outcome-based. It avoids dates and separates committed bug fixes from ideas that need a design decision. The idea parking lot is [BACKLOG.md](../BACKLOG.md); this file is the prioritized plan.
 

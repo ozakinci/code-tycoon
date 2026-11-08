@@ -22,6 +22,8 @@ Live build: https://ozakinci.github.io/code-tycoon/
 - Prestige confirmation with a clear reset/keep summary and protection against double payouts.
 - TD net rate, next penalty threshold, progress bar, outage banner and “Fix now”.
 - Team equipment summary, per-unit/total building production, and current vs next upgrade effects.
+- One-row desktop console with four equal-width cells (balance, per-second/per-click output, Technical Debt info, Refactor) around a centered Write Code action, so the buy grid stays above the fold. It stacks into three rows on small screens.
+- Fractional rates below 1,000 are readable (0.8 LOC/click instead of 0).
 - Compact number formatting up to Vg, scientific notation beyond.
 
 ## Stack

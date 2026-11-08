@@ -8,6 +8,7 @@ import {
   decodeSave,
   encodeSave,
   formatNumber,
+  formatRate,
   getMilestoneMultiplier,
   isBuildingOutaged,
   sanitizeGameState,
@@ -208,6 +209,18 @@ describe('costs and formatting', () => {
     expect(formatNumber(999999)).toBe('1.00M');
     expect(formatNumber(1e15)).toBe('1.00Qa');
     expect(formatNumber(Number.POSITIVE_INFINITY)).toBe('Infinity');
+  });
+
+  it('shows fractional rates instead of flooring them to zero', () => {
+    expect(formatRate(0)).toBe('0');
+    expect(formatRate(0.04)).toBe('0.04');
+    expect(formatRate(0.4)).toBe('0.4');
+    expect(formatRate(0.8)).toBe('0.8');
+    expect(formatRate(9.94)).toBe('9.94');
+    expect(formatRate(10.5)).toBe('10');
+    expect(formatRate(999.9)).toBe('999');
+    expect(formatRate(1000)).toBe('1.00K');
+    expect(formatRate(Number.POSITIVE_INFINITY)).toBe('Infinity');
   });
 
   it('applies building milestones', () => {
