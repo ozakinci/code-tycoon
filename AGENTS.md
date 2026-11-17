@@ -37,8 +37,8 @@ npm.cmd run preview   # serve the production build
 - No backend and no external API. Keep the build a static bundle.
 - `package.json` and the in-game version badge must match.
 
-## Session startup
+## Session triggers (clock in / clock out)
 
 1. **Project memory** - this file is auto-loaded; use it directly.
 2. **README freshness** - check that `README.md` matches the current features, stack and commands; update it when they drift.
-3. **Clock in / clock out** - this project defines no extra start or end steps; the global blocks apply as-is.
+3. **Global blocks** - no project-specific start or end steps; the global blocks apply as-is.
